@@ -53,8 +53,6 @@ LEARN.md
 docs/design-notes.md
 notes/
 start-hymt*.ps1
-colab-token.bat
-colab-token.*
 
 # Local models, runtime payloads, and binaries
 models/**/*.gguf
