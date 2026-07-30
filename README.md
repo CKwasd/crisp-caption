@@ -146,7 +146,15 @@ On Windows, copy `profiles\profile.ja.colab.example.json` to `profiles\profile.j
 "translate_url": "https://<host>.trycloudflare.com/v1/chat/completions"
 ```
 
-Set the token in the same terminal before starting the bridge:
+Set the token in the same terminal before starting the bridge, or use the helper script:
+
+```bat
+colab-token.bat
+```
+
+The helper prompts for the token, sets both `CRISPASR_REMOTE_TOKEN` and `OPENAI_API_KEY`, then launches the bridge.
+
+Manual equivalent:
 
 ```bat
 set CRISPASR_REMOTE_TOKEN=<token printed by Colab>
