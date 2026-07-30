@@ -145,6 +145,8 @@ body {{
   }}
 
   function connect() {{
+    rowsByKey.clear();
+    finalSeqToKey.clear();
     status.style.display = 'block';
     status.textContent = {initial_status!r};
     const ws = new WebSocket(wsUrl);

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from dataclasses import dataclass, field
 
 from aiohttp import web
@@ -17,8 +18,18 @@ class BridgeRealtimeState:
     last_error: str = ""
     first_pcm_mono: float | None = None
     stream_preload_sec: float = 0.0
+    suppress_transcripts: bool = False
     active_profile: str = ""
     crisp_status: str = "stopped"
+    last_audio_t: float | None = None
+
+
+def _calc_lag_sec(state: BridgeRealtimeState) -> float:
+    if state.first_pcm_mono is None or state.last_audio_t is None:
+        return 0.0
+    wall = time.monotonic() - state.first_pcm_mono
+    aud = state.last_audio_t - state.stream_preload_sec
+    return round(wall - aud, 1)
 
 
 async def broadcast_health(state: BridgeRealtimeState) -> None:
@@ -32,6 +43,7 @@ async def broadcast_health(state: BridgeRealtimeState) -> None:
             "last_error": state.last_error,
             "active_profile": state.active_profile,
             "crisp_status": state.crisp_status,
+            "latency_sec": _calc_lag_sec(state),
         },
     )
 

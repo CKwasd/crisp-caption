@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebRTC CrispASR</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <h1>WebRTC CrispASR</h1>
+      <p>Live capture, transcript, and translation console.</p>
+    </div>
+    <section class="section">
+      <div class="label">Capture</div>
+      <div class="button-grid">
+        <button type="button" class="primary" id="btn-tab">Tab audio</button>
+        <button type="button" id="btn-mic">Microphone</button>
+        <button type="button" class="danger" id="btn-stop" disabled>Stop</button>
+      </div>
+    </section>
+    <section class="section">
+      <div class="label">Status</div>
+      <div id="error-banner" class="error-banner"></div>
+      <div class="status-list">
+        <div class="status-item"><span class="dot" id="dot-capture"></span><span>Capture</span><strong id="txt-capture">idle</strong></div>
+        <div class="status-item"><span class="dot" id="dot-crisp"></span><span>CrispASR</span><strong id="txt-crisp">stopped</strong></div>
+        <div class="status-item"><span class="dot" id="dot-profile"></span><span>Profile</span><strong id="txt-profile">none</strong></div>
+        <div class="status-item"><span class="dot" id="dot-translator"></span><span>Translator</span><strong id="txt-translator">disabled / queue 0</strong></div>
+        <div class="status-item"><span class="dot" id="dot-latency"></span><span>Latency &Delta;</span><strong id="txt-latency">--</strong></div>
+      </div>
+    </section>
+    <section class="section">
+      <div class="label">Counters</div>
+      <div class="stats">
+        <div class="stat"><b id="st-partial">0</b><span>partials</span></div>
+        <div class="stat"><b id="st-final">0</b><span>finals</span></div>
+        <div class="stat"><b id="st-trans">0</b><span>translations</span></div>
+        <div class="stat"><b id="st-err">0</b><span>errors</span></div>
+      </div>
+    </section>
+    <section class="section log-section">
+      <div class="label">Event Log</div>
+      <pre class="log" id="log"></pre>
+    </section>
+  </aside>
+  <main class="main">
+    <header class="toolbar">
+      <div class="toolbar-title">
+        <h2>Transcript</h2>
+        <p id="session-label">No active capture</p>
+      </div>
+      <div class="toolbar-actions">
+        <select class="profile-select" id="profile-select" title="Config profile">
+          <option value="" disabled selected>Select profile</option>
+        </select>
+        <button type="button" id="btn-load" class="icon-button" title="Load profile">↻</button>
+        <button type="button" id="btn-clear">Clear</button>
+        <button type="button" id="btn-overlay">Overlay</button>
+        <button type="button" id="btn-export">Export</button>
+        <button type="button" id="btn-diag">Diagnostics</button>
+        <div class="settings-wrap">
+          <button type="button" class="icon-button" id="btn-settings" title="Settings">⚙</button>
+          <div class="settings-popover" id="settings">
+            <div class="settings-title">Settings</div>
+            <div class="settings-list">
+              <label class="check-row"><input type="checkbox" id="set-partials" checked><span>Show partials</span></label>
+              <label class="check-row"><input type="checkbox" id="set-scroll" checked><span>Auto scroll</span></label>
+              <label class="field-row"><span>Display</span>
+                <select id="set-display">
+                  <option value="both">Source + translation</option>
+                  <option value="translation">Translation only</option>
+                </select>
+              </label>
+              <label class="field-row"><span>Text size</span>
+                <div class="range-control">
+                  <input type="range" id="set-font" min="14" max="28" step="1" value="18">
+                  <output id="set-font-out">18px</output>
+                </div>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+    <section class="transcript" id="transcript"><div class="empty">Waiting for transcript events.</div></section>
+  </main>
+</div>
+</body>
+<script src="/static/app.js?v=2"></script>
+</html>

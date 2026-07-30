@@ -2,48 +2,39 @@
 setlocal
 cd /d "%~dp0\.."
 
-set "PY=%CD%\.venv\Scripts\python.exe"
-
-set "LLAMA_CPP_VERSION=b9095"
-set "LLAMA_CPP_URL=https://github.com/ggml-org/llama.cpp/releases/download/b9095/llama-b9095-bin-win-vulkan-x64.zip"
-set "LLAMA_CPP_SHA256=297209d9f17ac0c25cd146c8e0b11bdb77fc672512aba84045e20ab0d51c96a9"
-set "LLAMA_CPP_ZIP=tools\cache\llama-cpp-windows-vulkan.zip"
-set "LLAMA_CPP_DIR=tools\llama.cpp"
-
-echo Downloading llama.cpp Vulkan runtime...
-if exist "%PY%" (
-  "%PY%" scripts\download_file.py one --url "%LLAMA_CPP_URL%" --target "%LLAMA_CPP_ZIP%" --sha256 "%LLAMA_CPP_SHA256%"
-) else (
-  py -3 scripts\download_file.py one --url "%LLAMA_CPP_URL%" --target "%LLAMA_CPP_ZIP%" --sha256 "%LLAMA_CPP_SHA256%"
-  if errorlevel 1 python scripts\download_file.py one --url "%LLAMA_CPP_URL%" --target "%LLAMA_CPP_ZIP%" --sha256 "%LLAMA_CPP_SHA256%"
+set "FORCE="
+set "BACKEND=auto"
+:parse
+if "%~1"=="" goto run
+if /I "%~1"=="--force" set "FORCE=--force"
+if /I "%~1"=="--cuda" set "BACKEND=cuda"
+if /I "%~1"=="--vulkan" set "BACKEND=vulkan"
+if /I "%~1"=="--backend" (
+  set "BACKEND=%~2"
+  shift
 )
+shift
+goto parse
+
+:run
+echo Installing llama.cpp for Windows (backend=%BACKEND%; CUDA preferred when available)...
+call scripts\_run_py.bat scripts\download_file.py install-llama-windows --backend %BACKEND% %FORCE%
 if errorlevel 1 (
   echo [FAIL] llama.cpp download failed.
-  echo If the release asset name changed, edit LLAMA_CPP_URL in this BAT file.
   pause
   exit /b 1
 )
 
-echo Extracting llama.cpp to %LLAMA_CPP_DIR%...
-if exist "%PY%" (
-  "%PY%" scripts\download_file.py extract --archive "%LLAMA_CPP_ZIP%" --dest "%LLAMA_CPP_DIR%" --strip-top-level --delete-archive
-) else (
-  py -3 scripts\download_file.py extract --archive "%LLAMA_CPP_ZIP%" --dest "%LLAMA_CPP_DIR%" --strip-top-level --delete-archive
-  if errorlevel 1 python scripts\download_file.py extract --archive "%LLAMA_CPP_ZIP%" --dest "%LLAMA_CPP_DIR%" --strip-top-level --delete-archive
-)
-if errorlevel 1 (
-  echo [FAIL] llama.cpp extract failed.
+if not exist "tools\llama.cpp\llama-server.exe" (
+  echo [FAIL] llama-server.exe was not found: tools\llama.cpp\llama-server.exe
   pause
   exit /b 1
 )
 
-if not exist "%LLAMA_CPP_DIR%\llama-server.exe" (
-  echo [FAIL] llama-server.exe was not found after extraction: %LLAMA_CPP_DIR%\llama-server.exe
-  echo Check the zip layout or edit this BAT file.
-  pause
-  exit /b 1
+if exist "tools\llama.cpp\.backend" (
+  set /p BACKEND_USED=<tools\llama.cpp\.backend
+  echo [OK] llama.cpp backend: %BACKEND_USED%
 )
-
-"%LLAMA_CPP_DIR%\llama-server.exe" --help >nul
-echo [OK] llama.cpp installed at %LLAMA_CPP_DIR%
+"tools\llama.cpp\llama-server.exe" --help >nul
+echo [OK] llama.cpp installed at tools\llama.cpp
 pause

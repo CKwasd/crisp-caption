@@ -11,66 +11,81 @@ from bridge_state import BridgeRealtimeState, broadcast_health, broadcast_json
 
 logger = logging.getLogger(__name__)
 
-async def relay_stdout(
-    proc: asyncio.subprocess.Process,
-    state: BridgeRealtimeState,
-    *,
-    enqueue_for_translate: bool,
-    print_raw_crisp_events: bool,
-    debug_timestamps: bool,
-) -> None:
-    assert proc.stdout
-    encoding = "utf-8"
-    first_event_mono: float | None = None
-    first_event_audio_t: float | None = None
-    last_event_mono: float | None = None
-    last_event_audio_t: float | None = None
+# ponytail: drop oldest when translator lags; raise if OOM under burst load
+MAX_TRANSLATE_QUEUE = 32
 
-    def add_debug_timestamps(obj: dict[str, object], audio_t: float | None) -> dict[str, object]:
-        nonlocal first_event_mono, first_event_audio_t, last_event_mono, last_event_audio_t
-        if not debug_timestamps:
+
+async def enqueue_translation(state: BridgeRealtimeState, seq: int, text: str) -> None:
+    q = state.transcript_queue
+    while q.qsize() >= MAX_TRANSLATE_QUEUE:
+        try:
+            q.get_nowait()
+            q.task_done()
+        except asyncio.QueueEmpty:
+            break
+    await q.put((seq, text))
+
+
+class CrispEventRelay:
+    def __init__(
+        self,
+        state: BridgeRealtimeState,
+        *,
+        enqueue_for_translate: bool,
+        print_raw_crisp_events: bool,
+        debug_timestamps: bool,
+    ) -> None:
+        self.state = state
+        self.enqueue_for_translate = enqueue_for_translate
+        self.print_raw_crisp_events = print_raw_crisp_events
+        self.debug_timestamps = debug_timestamps
+        self.first_event_mono: float | None = None
+        self.first_event_audio_t: float | None = None
+        self.last_event_mono: float | None = None
+        self.last_event_audio_t: float | None = None
+
+    def add_debug_timestamps(self, obj: dict[str, object], audio_t: float | None) -> dict[str, object]:
+        if not self.debug_timestamps:
             return obj
 
         now_mono = time.monotonic()
-        if first_event_mono is None:
-            first_event_mono = now_mono
-            first_event_audio_t = audio_t
+        if self.first_event_mono is None:
+            self.first_event_mono = now_mono
+            self.first_event_audio_t = audio_t
 
         out = dict(obj)
-        elapsed = now_mono - first_event_mono
+        elapsed = now_mono - self.first_event_mono
         out["dbg_wall"] = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         out["dbg_elapsed_sec"] = round(elapsed, 3)
 
-        if last_event_mono is not None:
-            out["dbg_gap_sec"] = round(now_mono - last_event_mono, 3)
+        if self.last_event_mono is not None:
+            out["dbg_gap_sec"] = round(now_mono - self.last_event_mono, 3)
         if audio_t is not None:
             out["dbg_audio_t"] = round(audio_t, 3)
-            if first_event_audio_t is not None:
-                audio_elapsed = audio_t - first_event_audio_t
+            if self.first_event_audio_t is not None:
+                audio_elapsed = audio_t - self.first_event_audio_t
                 out["dbg_audio_elapsed_sec"] = round(audio_elapsed, 3)
                 out["dbg_lag_sec"] = round(elapsed - audio_elapsed, 3)
-            if state.first_pcm_mono is not None:
-                live_audio_elapsed = audio_t - state.stream_preload_sec
-                live_elapsed = now_mono - state.first_pcm_mono
+            if self.state.first_pcm_mono is not None:
+                live_audio_elapsed = audio_t - self.state.stream_preload_sec
+                live_elapsed = now_mono - self.state.first_pcm_mono
                 out["dbg_live_elapsed_sec"] = round(live_elapsed, 3)
                 out["dbg_live_audio_elapsed_sec"] = round(live_audio_elapsed, 3)
                 out["dbg_live_lag_sec"] = round(live_elapsed - live_audio_elapsed, 3)
-            if last_event_audio_t is not None:
-                out["dbg_audio_gap_sec"] = round(audio_t - last_event_audio_t, 3)
+            if self.last_event_audio_t is not None:
+                out["dbg_audio_gap_sec"] = round(audio_t - self.last_event_audio_t, 3)
 
-        last_event_mono = now_mono
+        self.last_event_mono = now_mono
         if audio_t is not None:
-            last_event_audio_t = audio_t
+            self.last_event_audio_t = audio_t
         return out
 
-    while True:
-        raw = await proc.stdout.readline()
-        if not raw:
-            break
-        text = raw.decode(encoding, errors="replace").strip()
+    async def handle_line(self, text: str) -> None:
+        text = text.strip()
         if not text:
-            continue
+            return
 
+        state = self.state
         try:
             event = json.loads(text)
         except json.JSONDecodeError:
@@ -79,6 +94,8 @@ async def relay_stdout(
         if isinstance(event, dict) and isinstance(event.get("type"), str):
             kind = str(event["type"])
             if kind in {"partial", "final"}:
+                if state.suppress_transcripts:
+                    return
                 state.transcript_seq += 1
                 seq = state.transcript_seq
                 utterance_id = event.get("utterance_id")
@@ -99,33 +116,65 @@ async def relay_stdout(
                         payload[key] = val
                         if key == "t1":
                             t1 = float(val)
-                terminal_payload = event if print_raw_crisp_events else payload
-                print(json.dumps(add_debug_timestamps(terminal_payload, t1), ensure_ascii=False), flush=True)
-                await broadcast_json(state.ws_clients, payload)
-                if enqueue_for_translate and kind == "final" and transcript_text.strip():
-                    await state.transcript_queue.put((seq, transcript_text))
-                continue
+                if t1 is not None:
+                    state.last_audio_t = t1
+                terminal_payload = event if self.print_raw_crisp_events else payload
+                print(json.dumps(self.add_debug_timestamps(terminal_payload, t1), ensure_ascii=False), flush=True)
+                if kind != "final" or transcript_text.strip():
+                    await broadcast_json(state.ws_clients, payload)
+                if t1 is not None:
+                    await broadcast_health(state)
+                if self.enqueue_for_translate and kind == "final" and transcript_text.strip():
+                    await enqueue_translation(state, seq, transcript_text)
+                return
 
             if kind == "silence":
+                if state.suppress_transcripts:
+                    return
                 payload = {"type": "silence"}
                 audio_t: float | None = None
                 val = event.get("t")
                 if isinstance(val, (int, float)):
                     payload["t"] = val
                     audio_t = float(val)
-                terminal_payload = event if print_raw_crisp_events else payload
-                print(json.dumps(add_debug_timestamps(terminal_payload, audio_t), ensure_ascii=False), flush=True)
+                if audio_t is not None:
+                    state.last_audio_t = audio_t
+                    await broadcast_health(state)
+                terminal_payload = event if self.print_raw_crisp_events else payload
+                print(json.dumps(self.add_debug_timestamps(terminal_payload, audio_t), ensure_ascii=False), flush=True)
                 await broadcast_json(state.ws_clients, payload)
-                continue
+                return
 
         state.transcript_seq += 1
         seq = state.transcript_seq
         payload = {"type": "transcript", "seq": seq, "kind": "plain", "final": True, "text": text}
-        print(json.dumps(add_debug_timestamps(payload, None), ensure_ascii=False), flush=True)
+        print(json.dumps(self.add_debug_timestamps(payload, None), ensure_ascii=False), flush=True)
         await broadcast_json(state.ws_clients, payload)
-        if enqueue_for_translate:
-            await state.transcript_queue.put((seq, text))
+        if self.enqueue_for_translate:
+            await enqueue_translation(state, seq, text)
             await broadcast_health(state)
+
+
+async def relay_stdout(
+    proc: asyncio.subprocess.Process,
+    state: BridgeRealtimeState,
+    *,
+    enqueue_for_translate: bool,
+    print_raw_crisp_events: bool,
+    debug_timestamps: bool,
+) -> None:
+    assert proc.stdout
+    relay = CrispEventRelay(
+        state,
+        enqueue_for_translate=enqueue_for_translate,
+        print_raw_crisp_events=print_raw_crisp_events,
+        debug_timestamps=debug_timestamps,
+    )
+    while True:
+        raw = await proc.stdout.readline()
+        if not raw:
+            break
+        await relay.handle_line(raw.decode("utf-8", errors="replace"))
 
 
 SAMPLE_RATE = 16000

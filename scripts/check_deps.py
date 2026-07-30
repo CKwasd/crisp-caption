@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import socket
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -91,11 +93,12 @@ def check_packages() -> None:
 
 
 def check_frontend() -> None:
-    index = ROOT / "frontend" / "dist" / "index.html"
-    if index.is_file():
-        ok("frontend/dist/index.html exists")
+    static = ROOT / "static"
+    missing = [name for name in ("index.html", "app.css", "app.js") if not (static / name).is_file()]
+    if missing:
+        fail(f"static UI missing: {', '.join(missing)}")
     else:
-        fail("frontend build not found", "Run scripts\\setup-windows.bat")
+        ok("static/index.html + app.css + app.js exist")
 
 
 def check_executable(path: Path, label: str, fix: str) -> None:
@@ -105,40 +108,77 @@ def check_executable(path: Path, label: str, fix: str) -> None:
         fail(f"{label} not found: {path}", fix)
 
 
-def check_profile(profile: dict[str, Any]) -> None:
-    crisp = str(profile.get("crispasr") or "").strip()
-    if crisp.lower() == "auto":
-        crisp_path = ROOT / "tools" / "crispasr" / "crispasr.exe"
-    elif crisp and ("/" in crisp or "\\" in crisp or crisp.endswith(".exe")):
-        crisp_path = Path(crisp)
-        if not crisp_path.is_absolute():
-            crisp_path = ROOT / crisp_path
-    elif crisp:
-        found = shutil.which(crisp)
-        if found:
-            ok(f"CrispASR found on PATH: {found}")
-            crisp_path = None
-        else:
-            fail(f"CrispASR executable not found on PATH: {crisp}", "Run scripts\\download-crispasr-windows.bat or edit profiles\\profile.ja.json")
-            crisp_path = None
-    else:
-        fail("profile crispasr is empty", "Set crispasr to tools/crispasr/crispasr.exe")
-        crisp_path = None
-    if crisp_path is not None:
-        check_executable(crisp_path, "CrispASR", "Run scripts\\download-crispasr-windows.bat")
+def is_local_url(url: str) -> bool:
+    try:
+        host = urllib.parse.urlsplit(url).hostname or ""
+    except ValueError:
+        return False
+    return host in {"127.0.0.1", "localhost", "::1"}
 
-    asr_model = crisp_arg_path(profile, "-m")
-    if asr_model:
-        check_executable(asr_model, "ASR model", "Run scripts\\models-download.bat")
-    vad_model = crisp_arg_path(profile, "-vm")
-    if vad_model:
-        check_executable(vad_model, "VAD model", "Run scripts\\models-download.bat")
+
+def asr_health_url(remote_asr_url: str) -> str:
+    parts = urllib.parse.urlsplit(remote_asr_url)
+    scheme = "https" if parts.scheme == "wss" else parts.scheme or "https"
+    return urllib.parse.urlunsplit((scheme, parts.netloc, "/health", "", ""))
+
+
+def check_profile(profile: dict[str, Any]) -> None:
+    asr_mode = str(profile.get("asr_mode") or "local").strip().lower()
+    if asr_mode not in {"local", "remote"}:
+        fail(f"Unsupported asr_mode: {asr_mode}", 'Use "local" or "remote"')
+        asr_mode = "local"
+
+    if asr_mode == "remote":
+        remote_asr_url = str(profile.get("remote_asr_url") or "").strip()
+        bearer_env = str(profile.get("remote_asr_bearer_env") or "CRISPASR_REMOTE_TOKEN").strip()
+        bearer = os.environ.get(bearer_env) if bearer_env else None
+        if remote_asr_url.startswith(("wss://", "ws://")):
+            ok(f"Remote ASR URL configured: {remote_asr_url}")
+            check_remote_health(remote_asr_url, bearer)
+        else:
+            fail("remote_asr_url must be a ws:// or wss:// URL", "Paste the Colab Cloudflare Tunnel /asr/stream URL into the profile")
+        if bearer:
+            ok(f"Remote ASR token env is set: {bearer_env}")
+        else:
+            fail(f"Remote ASR token env is not set: {bearer_env}", f"Run: set {bearer_env}=<Colab token>")
+    else:
+        crisp = str(profile.get("crispasr") or "").strip()
+        if crisp.lower() == "auto":
+            crisp_path = ROOT / "tools" / "crispasr" / "crispasr.exe"
+        elif crisp and ("/" in crisp or "\\" in crisp or crisp.endswith(".exe")):
+            crisp_path = Path(crisp)
+            if not crisp_path.is_absolute():
+                crisp_path = ROOT / crisp_path
+        elif crisp:
+            found = shutil.which(crisp)
+            if found:
+                ok(f"CrispASR found on PATH: {found}")
+                crisp_path = None
+            else:
+                fail(f"CrispASR executable not found on PATH: {crisp}", "Run scripts\\download-crispasr-windows.bat or edit profiles\\profile.ja.json")
+                crisp_path = None
+        else:
+            fail("profile crispasr is empty", "Set crispasr to tools/crispasr/crispasr.exe")
+            crisp_path = None
+        if crisp_path is not None:
+            check_executable(crisp_path, "CrispASR", "Run scripts\\download-crispasr-windows.bat")
+
+        asr_model = crisp_arg_path(profile, "-m")
+        if asr_model:
+            check_executable(asr_model, "ASR model", "Run scripts\\models-download.bat")
+        vad_model = crisp_arg_path(profile, "-vm")
+        if vad_model:
+            check_executable(vad_model, "VAD model", "Run scripts\\models-download.bat")
 
     translate_model = str(profile.get("translate_model") or "").strip()
     if translate_model:
-        check_executable(ROOT / "tools" / "llama.cpp" / "llama-server.exe", "llama-server", "Run scripts\\download-llama-cpp-windows.bat")
-        check_executable(ROOT / "models" / "translation" / "Hy-MT2-1.8B-Q4_K_M.gguf", "Translation model", "Run scripts\\models-download.bat")
-        check_translation_health(str(profile.get("translate_url") or "http://127.0.0.1:8080/v1/chat/completions"))
+        translate_url = str(profile.get("translate_url") or "http://127.0.0.1:8080/v1/chat/completions")
+        if is_local_url(translate_url):
+            check_executable(ROOT / "tools" / "llama.cpp" / "llama-server.exe", "llama-server", "Run scripts\\download-llama-cpp-windows.bat")
+            check_executable(ROOT / "models" / "translation" / "Hy-MT2-1.8B-Q4_K_M.gguf", "Translation model", "Run scripts\\models-download.bat")
+        else:
+            ok(f"Remote translation URL configured: {translate_url}")
+        check_translation_health(translate_url)
     else:
         warn("Translation is disabled in profile", 'Set "translate_model": "Hy-MT2-1.8B" in profiles\\profile.ja.json')
 
@@ -152,18 +192,42 @@ def check_port(port: int) -> None:
             ok(f"Port {port} is free")
 
 
+def check_remote_health(remote_asr_url: str, bearer: str | None) -> None:
+    health = asr_health_url(remote_asr_url)
+    headers = {"Authorization": f"Bearer {bearer}"} if bearer else {}
+    req = urllib.request.Request(health, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if 200 <= resp.status < 300:
+                ok(f"Remote ASR service is reachable: {health}")
+            else:
+                warn(f"Remote ASR service returned HTTP {resp.status}: {health}")
+    except urllib.error.HTTPError as exc:
+        warn(f"Remote ASR health returned HTTP {exc.code}: {health}", "Check the Colab token and tunnel URL")
+    except (urllib.error.URLError, TimeoutError) as exc:
+        warn(f"Remote ASR service is not reachable yet: {exc}", "Start the Colab service and refresh the Cloudflare Tunnel URL")
+
+
 def check_translation_health(translate_url: str) -> None:
     health = "http://127.0.0.1:8080/health"
     if "/v1/" in translate_url:
         health = translate_url.split("/v1/", 1)[0] + "/health"
+    headers = {}
+    bearer = os.environ.get("OPENAI_API_KEY")
+    if bearer and not is_local_url(translate_url):
+        headers["Authorization"] = f"Bearer {bearer}"
+    req = urllib.request.Request(health, headers=headers)
     try:
-        with urllib.request.urlopen(health, timeout=2) as resp:
+        with urllib.request.urlopen(req, timeout=5 if not is_local_url(translate_url) else 2) as resp:
             if 200 <= resp.status < 300:
                 ok(f"Translation server is reachable: {health}")
             else:
                 warn(f"Translation server returned HTTP {resp.status}: {health}")
+    except urllib.error.HTTPError as exc:
+        warn(f"Translation server returned HTTP {exc.code}: {health}", "Check OPENAI_API_KEY/token and the tunnel URL")
     except (urllib.error.URLError, TimeoutError) as exc:
-        warn(f"Translation server is not running yet: {exc}", "run-windows.bat will start it, or run scripts\\start-translation-server-windows.bat")
+        fix = "Start the Colab service and refresh the Cloudflare Tunnel URL" if not is_local_url(translate_url) else "run-windows.bat will start it, or run scripts\\start-translation-server-windows.bat"
+        warn(f"Translation server is not running yet: {exc}", fix)
 
 
 def main() -> int:

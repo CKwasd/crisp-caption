@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import os
+from dataclasses import dataclass
 
 from crisp_process import normalize_crisp_argv
 
@@ -16,6 +17,35 @@ DEFAULT_TRANSLATE_URL = os.environ.get(
     "http://127.0.0.1:8080/v1/chat/completions",
 )
 
+
+@dataclass
+class BridgeRunConfig:
+    crisp_exe: str
+    crisp_args: list[str]
+    asr_mode: str = "local"
+    remote_asr_url: str = ""
+    remote_asr_bearer: str | None = None
+    remote_asr_bearer_env: str = "CRISPASR_REMOTE_TOKEN"
+    profile_name: str = ""
+    crisp_hide_stderr: bool = False
+    verbose: bool = False
+    translate_enabled: bool = False
+    translate_url: str = DEFAULT_TRANSLATE_URL
+    translate_model: str = ""
+    translate_window: int = 6
+    translate_temperature: float = 0.7
+    translate_top_k: int = 20
+    translate_top_p: float = 0.6
+    translate_repeat_penalty: float = 1.05
+    translate_max_tokens: int = 256
+    print_raw_crisp_events: bool = False
+    debug_timestamps: bool = False
+    warmup_sec: float = 0.0
+    warmup_audio: str = ""
+    translate_bearer: str | None = None
+    system_prompt: str | None = None
+    glossary: dict[str, str] | None = None
+
 CRISP_PATH_VALUE_FLAGS = frozenset({"-m", "-vm", "--model", "--vad-model", "--punc-model"})
 
 
@@ -23,6 +53,9 @@ BRIDGE_CONFIG_KEYS = frozenset(
     {
         "host",
         "port",
+        "asr_mode",
+        "remote_asr_url",
+        "remote_asr_bearer_env",
         "crispasr",
         "crisp_hide_stderr",
         "verbose",
@@ -41,6 +74,8 @@ BRIDGE_CONFIG_KEYS = frozenset(
         "max_tokens",
         "print_raw_crisp_events",
         "debug_timestamps",
+        "warmup_sec",
+        "warmup_audio",
         "no_translate",
         "translate_prompt_file",
         "glossary_file",
@@ -143,6 +178,22 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8765)
     p.add_argument(
+        "--asr-mode",
+        choices=("local", "remote"),
+        default="local",
+        help="ASR backend mode: local CrispASR subprocess or remote WebSocket ASR service.",
+    )
+    p.add_argument(
+        "--remote-asr-url",
+        default="",
+        help="Remote ASR WebSocket URL, for example wss://example.trycloudflare.com/asr/stream.",
+    )
+    p.add_argument(
+        "--remote-asr-bearer-env",
+        default="CRISPASR_REMOTE_TOKEN",
+        help="Environment variable containing the Bearer token for remote ASR.",
+    )
+    p.add_argument(
         "--crispasr",
         default=os.environ.get("CRISPASR_EXE", "crispasr"),
         help="crispasr executable (PATH or CRISPASR_EXE env)",
@@ -168,6 +219,19 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
         "--debug-timestamps",
         action="store_true",
         help="Add bridge wall-clock/backlog timing fields to terminal transcript JSON for latency debugging.",
+    )
+    p.add_argument(
+        "--warmup-sec",
+        type=float,
+        default=0.0,
+        help="Seconds of PCM to feed CrispASR at profile start before live capture (0=off). "
+        "Suppresses UI transcripts during warmup. Prefer a short speech clip via --warmup-audio for Cohere.",
+    )
+    p.add_argument(
+        "--warmup-audio",
+        default="",
+        metavar="PATH",
+        help="Optional 16 kHz mono WAV or raw s16le for warmup (uses first --warmup-sec). Silence if empty.",
     )
 
     p.add_argument(
@@ -245,7 +309,8 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     cfg_crisp: list[str] = []
     if isinstance(crisp_from_cfg, list):
         cfg_crisp = normalize_crisp_argv([str(x) for x in crisp_from_cfg])
-        cfg_crisp = resolve_config_crisp_paths(cfg_crisp, config_path)
+        if str(cfg.get("asr_mode") or "local").strip().lower() != "remote":
+            cfg_crisp = resolve_config_crisp_paths(cfg_crisp, config_path)
 
     # Config crisp_args is the base; optional `-- ...` appends (later tokens override in typical CLIs).
     if cfg_crisp and cli_crisp:
@@ -256,3 +321,59 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
         crisp_argv = cli_crisp
 
     return ns, crisp_argv
+
+
+def _resolve_warmup_audio(path: str, config_path: str | None) -> str:
+    if not path:
+        return ""
+    if os.path.isabs(path) or not config_path:
+        return path
+    base = os.path.dirname(os.path.abspath(os.path.expanduser(config_path)))
+    return os.path.normpath(os.path.join(base, path))
+
+
+def run_config_from_ns(
+    ns: argparse.Namespace,
+    crisp_args: list[str],
+    *,
+    profile_name: str = "",
+    system_prompt: str | None = None,
+    glossary: dict[str, str] | None = None,
+    translate_bearer: str | None = None,
+    remote_asr_bearer: str | None = None,
+) -> BridgeRunConfig:
+    translate_enabled = not ns.no_translate and bool((ns.translate_model or "").strip())
+    return BridgeRunConfig(
+        crisp_exe=ns.crispasr,
+        crisp_args=crisp_args,
+        asr_mode=ns.asr_mode,
+        remote_asr_url=ns.remote_asr_url,
+        remote_asr_bearer_env=(ns.remote_asr_bearer_env or "CRISPASR_REMOTE_TOKEN"),
+        remote_asr_bearer=remote_asr_bearer
+        if remote_asr_bearer is not None
+        else (os.environ.get(ns.remote_asr_bearer_env or "CRISPASR_REMOTE_TOKEN") or None),
+        profile_name=profile_name,
+        crisp_hide_stderr=ns.crisp_hide_stderr,
+        verbose=ns.verbose,
+        translate_enabled=translate_enabled,
+        translate_url=ns.translate_url,
+        translate_model=(ns.translate_model or "").strip(),
+        translate_window=ns.translate_window,
+        translate_temperature=ns.translate_temperature,
+        translate_top_k=ns.translate_top_k,
+        translate_top_p=ns.translate_top_p,
+        translate_repeat_penalty=ns.translate_repeat_penalty,
+        translate_max_tokens=ns.translate_max_tokens,
+        print_raw_crisp_events=ns.print_raw_crisp_events,
+        debug_timestamps=ns.debug_timestamps,
+        warmup_sec=float(getattr(ns, "warmup_sec", 0.0) or 0.0),
+        warmup_audio=_resolve_warmup_audio(
+            str(getattr(ns, "warmup_audio", "") or "").strip(),
+            getattr(ns, "bridge_config_path", None),
+        ),
+        translate_bearer=translate_bearer
+        if translate_bearer is not None
+        else (os.environ.get("OPENAI_API_KEY") or None),
+        system_prompt=system_prompt,
+        glossary=glossary,
+    )

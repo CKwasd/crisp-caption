@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Streaming Latency</title>
+<style>
+:root{color-scheme:dark;--bg:#111318;--panel:#1e1f25;--ink:#e2e2e9;--muted:#c5c6d0;--line:#44474f;--green:#47c48b;--yellow:#e4bc5f;--red:#ffb4ab;--blue:#aec6ff}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,sans-serif;min-height:100vh;display:flex;flex-direction:column}
+header{padding:12px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px}
+header h1{font-size:18px}
+header p{color:var(--muted);font-size:13px}
+.chart-wrap{flex:1;padding:12px 20px;display:flex;flex-direction:column;min-height:0}
+.chart-wrap canvas{flex:1;width:100%;display:block;background:#0c0e13;border:1px solid var(--line);border-radius:8px}
+.stats{display:flex;flex-wrap:wrap;gap:6px;padding:10px 20px 14px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 12px;font-size:13px;white-space:nowrap}
+.stat b{font-size:16px;display:inline-block;min-width:3ch}
+.clr-red{color:var(--red)}.clr-green{color:var(--green)}.clr-yellow{color:var(--yellow)}
+.legend{display:flex;gap:16px;padding:6px 20px 0;font-size:12px;color:var(--muted)}
+.legend span{display:flex;align-items:center;gap:5px}
+.swatch{display:inline-block;width:18px;height:3px;border-radius:2px}
+</style>
+</head>
+<body>
+<header>
+<div><h1>Streaming Latency</h1></div>
+<p id="status">Connecting...</p>
+</header>
+<div class="legend">
+<span><span class="swatch" style="background:#888"></span>Real time</span>
+<span><span class="swatch" style="background:var(--blue)"></span>Audio</span>
+<span style="color:var(--muted)">Gap = delay</span>
+</div>
+<div class="chart-wrap"><canvas id="chart"></canvas></div>
+<div class="stats" id="stats"></div>
+
+<script>
+(() => {
+let samples = [];
+const canvas = document.getElementById('chart');
+const ctx = canvas.getContext('2d');
+let ws = null, reconnectTimer = 0, startMono = 0;
+
+function connectWs() {
+  clearTimeout(reconnectTimer);
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws`);
+  document.getElementById('status').textContent = 'Connecting...';
+  ws.onopen = () => { document.getElementById('status').textContent = 'Connected'; };
+  ws.onerror = () => { document.getElementById('status').textContent = 'Error'; };
+  ws.onclose = () => {
+    document.getElementById('status').textContent = 'Disconnected (retry...)';
+    reconnectTimer = setTimeout(connectWs, 1500);
+  };
+  ws.onmessage = (ev) => {
+    try {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === 'health' && msg.latency_sec != null) {
+        const now = performance.now() / 1000;
+        if (!startMono) startMono = now;
+        const wall = now - startMono;
+        const audio = wall - Number(msg.latency_sec);
+        samples.push({ wall, audio });
+        const cutoff = wall - 120;
+        while (samples.length > 0 && samples[0].wall < cutoff) samples.shift();
+        draw();
+      }
+    } catch (_) {}
+  };
+}
+
+function draw() {
+  const W = canvas.width = canvas.offsetWidth * devicePixelRatio;
+  const H = canvas.height = canvas.offsetHeight * devicePixelRatio;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  const w = canvas.offsetWidth, h = canvas.offsetHeight;
+  const pad = { t: 30, r: 16, b: 40, l: 60 };
+  const pw = w - pad.l - pad.r;
+  const ph = h - pad.t - pad.b;
+  if (pw <= 0 || ph <= 0 || samples.length < 2) {
+    ctx.fillStyle = '#0c0e13'; ctx.fillRect(0, 0, w, h);
+    return;
+  }
+
+  const wallMax = samples[samples.length - 1].wall;
+  const xLo = Math.max(0, Math.floor((wallMax - 120) / 10) * 10);
+  const xHi = Math.ceil((wallMax + 2) / 10) * 10;
+  const inView = samples.filter(s => s.wall >= xLo);
+  const yVals = inView.flatMap(s => [s.wall, s.audio]);
+  const yLo = Math.floor(Math.min(...yVals) / 10) * 10;
+  const yHi = Math.max(xHi, Math.ceil((Math.max(...yVals) + 2) / 10) * 10);
+
+  ctx.fillStyle = '#0c0e13'; ctx.fillRect(0, 0, w, h);
+
+  // Grid
+  ctx.strokeStyle = '#2a2c32';
+  ctx.lineWidth = 1;
+  ctx.font = '11px ui-monospace, monospace';
+  ctx.fillStyle = '#c5c6d0';
+  const yRange = yHi - yLo;
+  const steps = Math.max(3, Math.min(8, Math.round(yRange / 5)));
+  for (let i = 0; i <= steps; i++) {
+    const v = yLo + yRange * i / steps;
+    const ypx = pad.t + ph - ph * (v - yLo) / yRange;
+    ctx.beginPath(); ctx.moveTo(pad.l, ypx); ctx.lineTo(w - pad.r, ypx); ctx.stroke();
+    ctx.textAlign = 'right'; ctx.fillText(v.toFixed(0), pad.l - 6, ypx + 4);
+  }
+  const xStep = Math.max(1, Math.round((xHi - xLo) / 6));
+  for (let x = xLo; x <= xHi; x += xStep) {
+    const xpx = pad.l + pw * (x - xLo) / (xHi - xLo);
+    ctx.beginPath(); ctx.moveTo(xpx, pad.t); ctx.lineTo(xpx, pad.t + ph); ctx.stroke();
+    ctx.textAlign = 'center'; ctx.fillText(x.toFixed(0), xpx, h - pad.b + 16);
+  }
+  ctx.textAlign = 'center'; ctx.fillText('Real time (s)', pad.l + pw / 2, h - 2);
+  ctx.save(); ctx.translate(14, pad.t + ph / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('Progress (s)', 0, 0); ctx.restore();
+
+  function xPx(v) { return pad.l + pw * (v - xLo) / (xHi - xLo); }
+  function yPx(v) { return pad.t + ph - ph * (v - yLo) / yRange; }
+
+  // Fill gap
+  ctx.beginPath();
+  for (let i = 0; i < inView.length; i++) {
+    const px = xPx(inView[i].wall), py = yPx(inView[i].audio);
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  if (inView.length > 0) {
+    const lastW = xPx(inView[inView.length - 1].wall);
+    ctx.lineTo(lastW, yPx(yLo));
+    ctx.lineTo(xPx(inView[0].wall), yPx(yLo));
+    ctx.closePath();
+    const lastLat = inView[inView.length - 1].wall - inView[inView.length - 1].audio;
+    ctx.fillStyle = lastLat > 0 ? 'rgba(255,180,171,0.06)' : 'rgba(71,196,139,0.06)';
+    ctx.fill();
+  }
+
+  // Wall line (45 deg, clipped to view)
+  ctx.strokeStyle = '#666';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  const wallStart = Math.max(xLo, yLo);
+  const wallEnd = Math.min(xHi, yHi);
+  if (wallStart < wallEnd) {
+    ctx.moveTo(xPx(wallStart), yPx(wallStart));
+    ctx.lineTo(xPx(wallEnd), yPx(wallEnd));
+    ctx.stroke();
+  }
+
+  // Audio line
+  ctx.strokeStyle = '#aec6ff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < inView.length; i++) {
+    const px = xPx(inView[i].wall), py = yPx(inView[i].audio);
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // Stats
+  const last = inView[inView.length - 1] || samples[samples.length - 1];
+  const lat = last.wall - last.audio;
+  const win = samples.slice(-10);
+  let drift = 0;
+  if (win.length >= 3) {
+    const n = win.length;
+    const sx = win.reduce((s, p) => s + p.wall, 0);
+    const sy = win.reduce((s, p) => s + (p.wall - p.audio), 0);
+    const sxy = win.reduce((s, p) => s + p.wall * (p.wall - p.audio), 0);
+    const sxx = win.reduce((s, p) => s + p.wall * p.wall, 0);
+    drift = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+  }
+  document.getElementById('stats').innerHTML = `
+    <div class="stat">Delay <b class="${lat > 0 ? 'clr-red' : 'clr-green'}">${lat > 0 ? '+' : ''}${lat.toFixed(1)}s</b></div>
+    <div class="stat">Trend <b class="${drift > 0.01 ? 'clr-red' : drift < -0.01 ? 'clr-green' : ''}">${drift > 0 ? '+' : ''}${(drift * 60).toFixed(2)}s/min</b></div>
+    <div class="stat">Real time <b>${last.wall.toFixed(0)}s</b></div>
+    <div class="stat">Audio <b>${last.audio.toFixed(0)}s</b></div>
+    <div class="stat">Samples <b>${samples.length}</b></div>
+  `;
+}
+
+let resizeTimer = 0;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(draw, 100);
+});
+
+connectWs();
+})();
+</script>
+</body>
+</html>

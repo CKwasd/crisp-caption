@@ -75,55 +75,8 @@ if not exist "profiles\profile.ja.json" (
   copy /Y "profiles\profile.ja.example.json" "profiles\profile.ja.json" >nul
 )
 
-where node >nul 2>nul
-if errorlevel 1 (
-  echo [FAIL] Node.js was not found on PATH.
-  echo Install Node.js LTS, then rerun this script.
-  pause
-  exit /b 1
-)
-
-where corepack >nul 2>nul
-if errorlevel 1 (
-  echo [WARN] Corepack was not found. Falling back to npm.
-)
-
-where npm >nul 2>nul
-if errorlevel 1 (
-  echo [FAIL] npm was not found. Install Node.js LTS.
-  pause
-  exit /b 1
-)
-
-echo Building browser UI...
-pushd frontend
-if exist "..\frontend\pnpm-lock.yaml" (
-  where corepack >nul 2>nul
-  if not errorlevel 1 (
-    call corepack pnpm install
-  )
-)
-if errorlevel 1 (
-  echo [WARN] pnpm install failed. Falling back to npm install --no-package-lock.
-  if exist node_modules (
-    echo Removing partial pnpm node_modules before npm fallback...
-    rmdir /S /Q node_modules
-  )
-  call npm install --no-package-lock
-)
-if errorlevel 1 (
-  popd
-  goto fail
-)
-call npm run build
-if errorlevel 1 (
-  popd
-  goto fail
-)
-popd
-
 echo.
-echo [OK] Setup completed.
+echo [OK] Setup completed. Browser UI is static\index.html (no Node build).
 echo Next steps:
 echo   scripts\download-crispasr-windows.bat
 echo   scripts\download-llama-cpp-windows.bat

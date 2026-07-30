@@ -1,19 +1,22 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import os
 from pathlib import Path
-import shutil
 
 import aiohttp
 from aiohttp import web
 
-from bridge_config import load_bridge_config_file, parse_args
+from asr_backend import LocalCrispAsrBackend, RemoteCrispAsrBackend
+from bridge_config import BridgeRunConfig, load_bridge_config_file, parse_args, run_config_from_ns
 from bridge_state import BridgeRealtimeState, broadcast_health
-from crisp_process import SAMPLE_RATE, build_crispasr_cmd, pcm_writer, relay_stderr, relay_stdout, stream_step_bytes_from_extra
-from translation import load_merged_glossary, resolve_translation_system_prompt, translate_health_url, translator_health_monitor, translator_worker
+from translation import (
+    load_merged_glossary,
+    resolve_translation_system_prompt,
+    translate_health_url,
+    translator_health_monitor,
+    translator_worker,
+)
 from web_app import make_app
 
 logger = logging.getLogger(__name__)
@@ -23,104 +26,65 @@ class CrispRuntime:
     def __init__(self, state: BridgeRealtimeState, pcm_queue: asyncio.Queue[bytes]) -> None:
         self.state = state
         self.pcm_queue = pcm_queue
-        self.proc: asyncio.subprocess.Process | None = None
+        self.asr_backend: LocalCrispAsrBackend | RemoteCrispAsrBackend | None = None
         self.http_session: aiohttp.ClientSession | None = None
         self.tasks: list[asyncio.Task[object]] = []
         self.lock = asyncio.Lock()
 
-    async def start(
-        self,
-        crisp_exe: str,
-        crispy_extra: list[str],
-        *,
-        profile_name: str,
-        crisp_hide_stderr: bool,
-        verbose: bool,
-        translate_enabled: bool,
-        translate_url: str,
-        translate_model: str,
-        translate_window: int,
-        translate_temperature: float,
-        translate_top_k: int,
-        translate_top_p: float,
-        translate_repeat_penalty: float,
-        translate_max_tokens: int,
-        print_raw_crisp_events: bool,
-        debug_timestamps: bool,
-        translate_bearer: str | None,
-        system_prompt: str | None,
-        glossary: dict[str, str] | None,
-    ) -> None:
+    async def start(self, cfg: BridgeRunConfig) -> None:
         async with self.lock:
             await self._stop_locked()
             self._drain_pcm_queue()
 
-            exe = self._resolve_executable(crisp_exe)
-            if not exe:
-                self.state.crisp_status = "error"
-                self.state.active_profile = profile_name
-                self.state.last_error = f"Cannot find crispasr executable: {crisp_exe!r}"
-                await broadcast_health(self.state)
-                raise FileNotFoundError(self.state.last_error)
-            if not crispy_extra:
-                self.state.crisp_status = "error"
-                self.state.active_profile = profile_name
-                self.state.last_error = "No CrispASR arguments in selected profile."
-                await broadcast_health(self.state)
-                raise ValueError(self.state.last_error)
-
-            cmd = build_crispasr_cmd(exe, crispy_extra)
-            logger.info("Spawning profile=%s: %s", profile_name, " ".join(cmd))
-
-            cwd_path = os.path.dirname(os.path.abspath(exe))
-            cwd = cwd_path if cwd_path and os.path.isdir(cwd_path) else None
-            stderr_arg = asyncio.subprocess.DEVNULL if crisp_hide_stderr else asyncio.subprocess.PIPE
-            self.state.active_profile = profile_name
+            self.state.active_profile = cfg.profile_name
             self.state.crisp_status = "starting"
             self.state.last_error = ""
-            self.state.translator_status = "checking" if translate_enabled else "disabled"
+            self.state.translator_status = "checking" if cfg.translate_enabled else "disabled"
             await broadcast_health(self.state)
 
-            self.proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=stderr_arg,
-                cwd=cwd,
-                limit=1024 * 1024,
+            common = dict(
+                state=self.state,
+                pcm_queue=self.pcm_queue,
+                crisp_args=cfg.crisp_args,
+                profile_name=cfg.profile_name,
+                enqueue_for_translate=cfg.translate_enabled,
+                print_raw_crisp_events=cfg.print_raw_crisp_events,
+                debug_timestamps=cfg.debug_timestamps,
             )
+            if cfg.asr_mode == "remote":
+                self.asr_backend = RemoteCrispAsrBackend(
+                    remote_asr_url=cfg.remote_asr_url,
+                    bearer=cfg.remote_asr_bearer,
+                    bearer_env=cfg.remote_asr_bearer_env,
+                    **common,
+                )
+            else:
+                self.asr_backend = LocalCrispAsrBackend(
+                    crisp_exe=cfg.crisp_exe,
+                    crisp_hide_stderr=cfg.crisp_hide_stderr,
+                    verbose=cfg.verbose,
+                    warmup_sec=cfg.warmup_sec,
+                    warmup_audio=cfg.warmup_audio,
+                    **common,
+                )
+            try:
+                await self.asr_backend.start()
+            except Exception:
+                await self.asr_backend.stop()
+                self.asr_backend = None
+                raise
 
-            self.tasks = [
-                asyncio.create_task(pcm_writer(self.proc, self.pcm_queue)),
-                asyncio.create_task(
-                    relay_stdout(
-                        self.proc,
-                        self.state,
-                        enqueue_for_translate=translate_enabled,
-                        print_raw_crisp_events=print_raw_crisp_events,
-                        debug_timestamps=debug_timestamps,
-                    )
-                ),
-                asyncio.create_task(self._watch_child(self.proc, profile_name)),
-            ]
-            if self.proc.stderr:
-                self.tasks.append(asyncio.create_task(relay_stderr(self.proc, crisp_verbose=verbose)))
-
-            preload = stream_step_bytes_from_extra(crispy_extra)
-            self.state.stream_preload_sec = preload / (2 * SAMPLE_RATE)
-            logger.info("Queueing initial %d-byte silence (one Crisp stream step) onto stdin.", preload)
-            await self.pcm_queue.put(b"\x00" * preload)
-
-            if translate_enabled:
-                assert system_prompt is not None
-                assert glossary is not None
+            if cfg.translate_enabled:
+                assert cfg.system_prompt is not None
+                assert cfg.glossary is not None
                 self.http_session = aiohttp.ClientSession()
                 self.tasks.append(
                     asyncio.create_task(
                         translator_health_monitor(
                             self.state,
                             self.http_session,
-                            health_url=translate_health_url(translate_url),
+                            health_url=translate_health_url(cfg.translate_url),
+                            bearer=cfg.translate_bearer,
                         )
                     )
                 )
@@ -130,23 +94,22 @@ class CrispRuntime:
                             self.state.transcript_queue,
                             self.http_session,
                             state=self.state,
-                            translate_url=translate_url,
-                            translate_model=translate_model,
-                            translate_window=translate_window,
-                            translate_temperature=translate_temperature,
-                            translate_top_k=translate_top_k,
-                            translate_top_p=translate_top_p,
-                            translate_repeat_penalty=translate_repeat_penalty,
-                            translate_max_tokens=translate_max_tokens,
-                            system_prompt=system_prompt,
-                            glossary=glossary,
-                            bearer=translate_bearer,
+                            translate_url=cfg.translate_url,
+                            translate_model=cfg.translate_model,
+                            translate_window=cfg.translate_window,
+                            translate_temperature=cfg.translate_temperature,
+                            translate_top_k=cfg.translate_top_k,
+                            translate_top_p=cfg.translate_top_p,
+                            translate_repeat_penalty=cfg.translate_repeat_penalty,
+                            translate_max_tokens=cfg.translate_max_tokens,
+                            system_prompt=cfg.system_prompt,
+                            glossary=cfg.glossary,
+                            bearer=cfg.translate_bearer,
                             ws_clients=self.state.ws_clients,
                         )
                     )
                 )
 
-            self.state.crisp_status = "running"
             await broadcast_health(self.state)
 
     async def stop(self) -> None:
@@ -161,33 +124,14 @@ class CrispRuntime:
             await asyncio.gather(*self.tasks, return_exceptions=True)
         self.tasks = []
 
-        if self.proc and self.proc.returncode is None:
-            self.proc.terminate()
-            try:
-                await asyncio.wait_for(self.proc.wait(), timeout=2.0)
-            except TimeoutError:
-                self.proc.kill()
-                await self.proc.wait()
-        self.proc = None
+        if self.asr_backend:
+            await self.asr_backend.stop()
+        self.asr_backend = None
 
         if self.http_session:
             await self.http_session.close()
         self.http_session = None
         self.state.crisp_status = "stopped"
-
-    async def _watch_child(self, proc: asyncio.subprocess.Process, profile_name: str) -> None:
-        rc = await proc.wait()
-        if proc is not self.proc:
-            return
-        if rc != 0:
-            msg = f"CrispASR profile {profile_name!r} exited with code {rc}"
-            logger.warning("%s", msg)
-            self.state.last_error = msg
-            self.state.crisp_status = "error"
-        else:
-            logger.warning("CrispASR profile %r exited cleanly.", profile_name)
-            self.state.crisp_status = "stopped"
-        await broadcast_health(self.state)
 
     def _drain_pcm_queue(self) -> None:
         while True:
@@ -196,15 +140,6 @@ class CrispRuntime:
                 self.pcm_queue.task_done()
             except asyncio.QueueEmpty:
                 return
-
-    @staticmethod
-    def _resolve_executable(crisp_exe: str) -> str | None:
-        if os.path.isfile(crisp_exe):
-            return crisp_exe
-        resolved = shutil.which(crisp_exe)
-        if resolved and os.path.isfile(resolved):
-            return resolved
-        return None
 
 
 def discover_profiles(profiles_dir: Path) -> list[dict[str, object]]:
@@ -216,22 +151,16 @@ def discover_profiles(profiles_dir: Path) -> list[dict[str, object]]:
             if local_name in local_profile_names:
                 continue
         try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, json.JSONDecodeError):
+            data = load_bridge_config_file(str(path))
+        except SystemExit:
             continue
-        if not isinstance(data, dict) or not isinstance(data.get("crisp_args"), list):
+        if not isinstance(data.get("crisp_args"), list):
             continue
-        data = load_bridge_config_file(str(path))
         profiles.append(
             {
                 "name": path.name,
                 "label": str(data.get("name") or path.stem),
                 "description": str(data.get("description") or ""),
-                "tags": data.get("tags") if isinstance(data.get("tags"), list) else [],
-                "path": str(path),
-                "translate_model": str(data.get("translate_model") or ""),
-                "crispasr": str(data.get("crispasr") or ""),
             }
         )
     return profiles
@@ -249,36 +178,23 @@ def resolve_profile_path(profiles_dir: Path, name: str) -> Path:
     return path
 
 
-async def async_main(
-    crisp_exe: str,
-    crispy_extra: list[str],
-    host: str,
-    port: int,
-    *,
-    crisp_hide_stderr: bool,
-    verbose: bool,
-    translate_enabled: bool,
-    translate_url: str,
-    translate_model: str,
-    translate_window: int,
-    translate_temperature: float,
-    translate_top_k: int,
-    translate_top_p: float,
-    translate_repeat_penalty: float,
-    translate_max_tokens: int,
-    print_raw_crisp_events: bool,
-    debug_timestamps: bool,
-    translate_bearer: str | None,
-    system_prompt: str | None,
-    glossary: dict[str, str] | None,
-    initial_profile: str,
-) -> None:
+def config_from_profile(path: Path) -> BridgeRunConfig:
+    ns, crisp_args = parse_args(["bridge_server.py", "--config", str(path)])
+    cfg = run_config_from_ns(ns, crisp_args, profile_name=path.name)
+    if cfg.translate_enabled:
+        cfg.glossary = load_merged_glossary((ns.glossary_file or "").strip() or None)
+        cfg.system_prompt = resolve_translation_system_prompt(
+            (ns.translate_prompt_file or "").strip() or None,
+            cfg.glossary,
+        )
+    return cfg
+
+
+async def async_main(cfg: BridgeRunConfig, host: str, port: int) -> None:
     pcm_queue: asyncio.Queue[bytes] = asyncio.Queue()
-    trans_q: asyncio.Queue[tuple[int, str]] = asyncio.Queue()
-    bridge_state = BridgeRealtimeState(transcript_queue=trans_q)
+    bridge_state = BridgeRealtimeState(transcript_queue=asyncio.Queue())
     runtime = CrispRuntime(bridge_state, pcm_queue)
-    base_dir = Path(__file__).resolve().parent
-    profiles_dir = base_dir / "profiles"
+    profiles_dir = Path(__file__).resolve().parent / "profiles"
 
     async def list_profiles() -> dict[str, object]:
         return {
@@ -289,65 +205,29 @@ async def async_main(
 
     async def select_profile(name: str) -> dict[str, object]:
         path = resolve_profile_path(profiles_dir, name)
-        ns, crisp_args = parse_args(["bridge_server.py", "--config", str(path)])
-        translate_is_enabled = not ns.no_translate and bool((ns.translate_model or "").strip())
-        profile_glossary: dict[str, str] | None = None
-        profile_prompt: str | None = None
-        if translate_is_enabled:
-            profile_glossary = load_merged_glossary((ns.glossary_file or "").strip() or None)
-            profile_prompt = resolve_translation_system_prompt(
-                (ns.translate_prompt_file or "").strip() or None,
-                profile_glossary,
-            )
-        await runtime.start(
-            ns.crispasr,
-            crisp_args,
-            profile_name=path.name,
-            crisp_hide_stderr=ns.crisp_hide_stderr,
-            verbose=ns.verbose,
-            translate_enabled=translate_is_enabled,
-            translate_url=ns.translate_url,
-            translate_model=(ns.translate_model or "").strip(),
-            translate_window=ns.translate_window,
-            translate_temperature=ns.translate_temperature,
-            translate_top_k=ns.translate_top_k,
-            translate_top_p=ns.translate_top_p,
-            translate_repeat_penalty=ns.translate_repeat_penalty,
-            translate_max_tokens=ns.translate_max_tokens,
-            print_raw_crisp_events=ns.print_raw_crisp_events,
-            debug_timestamps=ns.debug_timestamps,
-            translate_bearer=os.environ.get("OPENAI_API_KEY") or None,
-            system_prompt=profile_prompt,
-            glossary=profile_glossary,
-        )
+        try:
+            await runtime.start(config_from_profile(path))
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Profile start failed: %s", exc)
+            if not bridge_state.last_error:
+                bridge_state.last_error = str(exc)
+            bridge_state.crisp_status = "error"
         return {
             "profiles": discover_profiles(profiles_dir),
             "active": bridge_state.active_profile,
             "crisp_status": bridge_state.crisp_status,
         }
 
-    if crispy_extra:
-        await runtime.start(
-            crisp_exe,
-            crispy_extra,
-            profile_name=initial_profile or "cli",
-            crisp_hide_stderr=crisp_hide_stderr,
-            verbose=verbose,
-            translate_enabled=translate_enabled,
-            translate_url=translate_url,
-            translate_model=translate_model,
-            translate_window=translate_window,
-            translate_temperature=translate_temperature,
-            translate_top_k=translate_top_k,
-            translate_top_p=translate_top_p,
-            translate_repeat_penalty=translate_repeat_penalty,
-            translate_max_tokens=translate_max_tokens,
-            print_raw_crisp_events=print_raw_crisp_events,
-            debug_timestamps=debug_timestamps,
-            translate_bearer=translate_bearer,
-            system_prompt=system_prompt,
-            glossary=glossary,
-        )
+    if cfg.crisp_args:
+        try:
+            await runtime.start(cfg)
+        except Exception as exc:  # noqa: BLE001
+            # Keep UI up so user can switch profile or fix env (e.g. missing remote token).
+            logger.error("Initial profile start failed: %s", exc)
+            if not bridge_state.last_error:
+                bridge_state.last_error = str(exc)
+            bridge_state.crisp_status = "error"
+            bridge_state.active_profile = cfg.profile_name
     else:
         bridge_state.crisp_status = "stopped"
         bridge_state.translator_status = "disabled"

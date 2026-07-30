@@ -95,7 +95,6 @@ class SubtitleOverlay(QWidget):
         font_px: int,
         edge_px: int,
         corner_px: int,
-        click_through: bool,
         normal_window: bool,
     ) -> None:
         super().__init__()
@@ -205,7 +204,6 @@ class SubtitleOverlay(QWidget):
 
         QShortcut(QKeySequence("Esc"), self, activated=self._hide_frame)
         QShortcut(QKeySequence("Ctrl+Q"), self, activated=self.shutdown)
-        self.force_click_through = click_through
 
     def enterEvent(self, event) -> None:  # noqa: N802, ANN001
         super().enterEvent(event)
@@ -543,11 +541,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Ctrl-drag corner resize hit radius in pixels.",
     )
     parser.add_argument(
-        "--click-through",
-        action="store_true",
-        help="Let mouse clicks pass through the overlay. Use Esc/Ctrl+Q before enabling this.",
-    )
-    parser.add_argument(
         "--normal-window",
         action="store_true",
         help="Use a normal Qt window instead of the default tool window.",
@@ -572,7 +565,6 @@ def main(argv: list[str]) -> int:
         font_px=ns.font_px,
         edge_px=ns.edge_px,
         corner_px=ns.corner_px,
-        click_through=ns.click_through,
         normal_window=ns.normal_window,
     )
     overlay.show()

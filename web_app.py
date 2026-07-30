@@ -19,13 +19,18 @@ from overlay_page import obs_overlay_html
 
 logger = logging.getLogger(__name__)
 
-FRONTEND_DIST_DIR = Path(__file__).with_name("frontend") / "dist"
-INDEX_HTML = FRONTEND_DIST_DIR / "index.html"
-ASSETS_DIR = FRONTEND_DIST_DIR / "assets"
+STATIC_DIR = Path(__file__).with_name("static")
+CONTROL_HTML = STATIC_DIR / "index.html"
 OVERLAY_SCRIPT = Path(__file__).with_name("subtitle_overlay_qt.py")
 
-ProfileListHandler = Callable[[], Awaitable[dict[str, object]]]
-ProfileSelectHandler = Callable[[str], Awaitable[dict[str, object]]]
+
+def drain_pcm_queue(pcm_queue: asyncio.Queue[bytes]) -> None:
+    while True:
+        try:
+            pcm_queue.get_nowait()
+            pcm_queue.task_done()
+        except asyncio.QueueEmpty:
+            return
 
 
 async def consume_track(
@@ -56,20 +61,23 @@ def make_app(
     pcm_queue: asyncio.Queue[bytes],
     state: BridgeRealtimeState,
     *,
-    list_profiles: ProfileListHandler | None = None,
-    select_profile: ProfileSelectHandler | None = None,
+    list_profiles: Callable[[], Awaitable[dict[str, object]]],
+    select_profile: Callable[[str], Awaitable[dict[str, object]]],
 ) -> web.Application:
     pcs: set[RTCPeerConnection] = set()
     offer_lock = asyncio.Lock()
     overlay_process: subprocess.Popen[bytes] | None = None
 
     async def index(_: web.Request) -> web.Response:
-        if not INDEX_HTML.is_file():
-            return web.Response(
-                status=503,
-                text="Frontend build not found. Run `scripts\\setup-windows.bat` or build the UI in crisp-caption/frontend.",
-            )
-        return web.FileResponse(INDEX_HTML)
+        if not CONTROL_HTML.is_file():
+            return web.Response(status=503, text=f"Missing UI file: {CONTROL_HTML}")
+        return web.FileResponse(CONTROL_HTML)
+
+    async def diagnostics(_: web.Request) -> web.Response:
+        diag = STATIC_DIR / "diagnostics.html"
+        if not diag.is_file():
+            return web.Response(status=503, text="Diagnostics page not found")
+        return web.FileResponse(diag)
 
     async def obs_overlay(req: web.Request) -> web.Response:
         ws_proto = "wss" if req.secure else "ws"
@@ -111,11 +119,16 @@ def make_app(
             @pc.on("connectionstatechange")
             async def _on_state_change() -> None:
                 logger.info("pc connectionState=%s", pc.connectionState)
+                if pc.connectionState not in ("failed", "closed"):
+                    return
                 if pc.connectionState == "failed":
                     await pc.close()
-                    pcs.discard(pc)
-                elif pc.connectionState == "closed":
-                    pcs.discard(pc)
+                pcs.discard(pc)
+                drain_pcm_queue(pcm_queue)
+                state.first_pcm_mono = None
+                if not any(p.connectionState not in ("closed", "failed") for p in pcs):
+                    state.last_error = "" if pc.connectionState == "closed" else "WebRTC session ended."
+                    await broadcast_health(state)
 
             @pc.on("track")
             def _on_track(track) -> None:
@@ -154,13 +167,9 @@ def make_app(
         return ws
 
     async def profiles_handler(_: web.Request) -> web.Response:
-        if not list_profiles:
-            return web.json_response({"profiles": [], "active": state.active_profile})
         return web.json_response(await list_profiles())
 
     async def select_profile_handler(req: web.Request) -> web.Response:
-        if not select_profile:
-            return web.json_response({"error": "Profile switching is not available."}, status=503)
         try:
             data = await req.json()
         except json.JSONDecodeError:
@@ -208,9 +217,10 @@ def make_app(
 
     app = web.Application()
     app.router.add_get("/", index)
+    app.router.add_get("/diagnostics", diagnostics)
+    if STATIC_DIR.is_dir():
+        app.router.add_static("/static/", STATIC_DIR, name="static")
     app.router.add_get("/obs-overlay", obs_overlay)
-    if ASSETS_DIR.is_dir():
-        app.router.add_static("/assets/", ASSETS_DIR, name="assets")
     app.router.add_post("/offer", offer)
     app.router.add_post("/overlay/start", start_overlay)
     app.router.add_get("/profiles", profiles_handler)

@@ -12,6 +12,9 @@ The setup and download scripts may download third-party runtime binaries and mod
 - llama.cpp: downloaded by `scripts/download-llama-cpp-windows.bat`.
   - Project: https://github.com/ggml-org/llama.cpp
   - License: MIT, according to the upstream `LICENSE`.
+- cloudflared: downloaded by the optional Colab helper script.
+  - Project: https://github.com/cloudflare/cloudflared
+  - License: Apache License 2.0, according to the upstream `LICENSE`.
 
 ## Model Files
 

@@ -10,8 +10,8 @@ The target setup is a Windows PC with a Vulkan-capable GPU and about 6 GB of VRA
 browser tab/mic audio
   -> WebRTC
   -> Python bridge
-  -> CrispASR Vulkan streaming ASR
-  -> llama.cpp Vulkan translation server
+  -> CrispASR Vulkan streaming ASR, local or remote Colab WebSocket
+  -> llama.cpp translation server, local or remote Colab HTTP
   -> browser transcript / transparent overlay / OBS overlay
 ```
 
@@ -65,19 +65,18 @@ On Chromium-based browsers, enable tab audio in the browser capture picker.
 - Installs Python dependencies.
 - Installs transparent overlay dependencies.
 - Creates `profiles\profile.ja.json` from `profiles\profile.ja.example.json` if missing.
-- Installs frontend dependencies.
-- Builds `frontend\dist`.
+- Browser UI is `static\index.html` (no Node build).
 
 `scripts\download-crispasr-windows.bat`
 
-- Downloads a fixed CrispASR Windows Vulkan runtime.
+- Downloads the latest CrispASR Windows runtime from GitHub (CUDA if the machine has NVIDIA/CUDA, else Vulkan).
 - Extracts it to `tools\crispasr\`.
 - Deletes the downloaded archive.
 - Checks that `tools\crispasr\crispasr.exe` starts.
 
 `scripts\download-llama-cpp-windows.bat`
 
-- Downloads a fixed llama.cpp Windows Vulkan runtime.
+- Downloads the latest llama.cpp Windows runtime from GitHub (CUDA if available, else Vulkan; CUDA also pulls matching cudart).
 - Extracts it to `tools\llama.cpp\`.
 - Deletes the downloaded archive.
 - Checks that `tools\llama.cpp\llama-server.exe` exists.
@@ -89,7 +88,7 @@ On Chromium-based browsers, enable tab audio in the browser capture picker.
 
 `scripts\check-deps.bat`
 
-- Checks Python packages, frontend build output, profile, CrispASR, llama.cpp, model files, ports, and translation server reachability.
+- Checks Python packages, control UI module, profile, CrispASR, llama.cpp, model files, ports, and translation server reachability.
 
 `scripts\run-windows.bat`
 
@@ -108,7 +107,6 @@ Recommended baseline:
 - Vulkan-capable GPU
 - About 6 GB VRAM
 - Python 3.11+
-- Node.js LTS. The setup script tries Corepack/pnpm first and falls back to npm.
 - Chromium-based browser for tab audio capture
 
 If the translation server exits immediately or runs out of memory, try:
@@ -119,12 +117,52 @@ scripts\start-translation-server-low-vram-windows.bat
 
 The low-VRAM server uses smaller llama.cpp context/batch settings. It may be slower or have less translation context.
 
+## Colab Remote Compute
+
+Remote mode keeps the browser UI, WebRTC capture, OBS overlay, and transparent overlay on Windows, but sends 16 kHz mono PCM to a Colab-hosted CrispASR service and sends final subtitles to a Colab-hosted llama.cpp server.
+
+1. In Colab, open or upload `scripts/colab/crisp_caption_colab_remote.ipynb`.
+2. Upload `scripts/colab/run_colab_remote.py` when the notebook asks for it.
+3. The helper automatically downloads cloudflared, model files, a Linux CrispASR release, and a prebuilt llama.cpp release when possible. Set `LLAMA_BACKEND=auto`, `ai-dock-cuda`, `vulkan`, `official-cpu`, or `build-cuda` to choose the translation runtime. If auto-detection fails, set `CRISPASR_URL`, `CRISPASR_EXE`, `LLAMA_CPP_URL`, or `LLAMA_SERVER`.
+4. Run the final notebook cell, or run the helper script directly:
+
+```bash
+python run_colab_remote.py
+```
+
+The helper no longer builds llama.cpp by default. Use `python run_colab_remote.py --build-llama` only when you intentionally want a source-build fallback.
+
+The script starts llama.cpp, starts the ASR/translation proxy on Colab, starts Cloudflare Tunnel, and prints:
+
+```text
+CRISPASR_REMOTE_TOKEN=...
+https://<host>.trycloudflare.com
+```
+
+On Windows, copy `profiles\profile.ja.colab.example.json` to `profiles\profile.ja.json`, then set:
+
+```json
+"remote_asr_url": "wss://<host>.trycloudflare.com/asr/stream",
+"translate_url": "https://<host>.trycloudflare.com/v1/chat/completions"
+```
+
+Set the token in the same terminal before starting the bridge:
+
+```bat
+set CRISPASR_REMOTE_TOKEN=<token printed by Colab>
+set OPENAI_API_KEY=<same token>
+scripts\check-deps.bat
+scripts\run-windows.bat
+```
+
+`OPENAI_API_KEY` is used as the Bearer token for the remote llama.cpp proxy. Cloudflare Tunnel URLs are ephemeral, so update the profile whenever the Colab runtime restarts.
+
 ## Models
 
 The default profile expects:
 
 ```text
-models\asr\cohere-asr-ja-v0.1-q4_k.gguf
+models\asr\cohere-asr-ja-q6_k.gguf
 models\vad\firered-vad.gguf
 models\translation\Hy-MT2-1.8B-Q4_K_M.gguf
 ```
@@ -152,6 +190,7 @@ Local profile JSON files are ignored by Git. Edit `profiles\profile.ja.json` for
 Important fields:
 
 ```json
+"asr_mode": "local",
 "crispasr": "tools/crispasr/crispasr.exe",
 "translate_model": "Hy-MT2-1.8B",
 "translate_url": "http://127.0.0.1:8080/v1/chat/completions"
@@ -218,26 +257,13 @@ Common fixes:
 - Missing llama.cpp: run `scripts\download-llama-cpp-windows.bat`.
 - Missing models: run `scripts\models-download.bat`.
 - Translation server out of memory: use `scripts\start-translation-server-low-vram-windows.bat`.
-- Browser page not found: rerun `scripts\setup-windows.bat` to rebuild `frontend\dist`.
+- Remote Colab 401/unauthorized: set `CRISPASR_REMOTE_TOKEN` for ASR and `OPENAI_API_KEY` for translation.
+- Remote Colab connection failure: refresh the Cloudflare Tunnel URLs in `profiles\profile.ja.json`.
+- Browser UI missing: ensure `static\index.html` exists.
 
 ## Development
 
-Run the frontend dev server:
-
-```bat
-cd frontend
-corepack pnpm install
-corepack pnpm dev
-```
-
-Keep the Python bridge running on `127.0.0.1:8765`; Vite proxies backend calls.
-
-Build the production UI:
-
-```bat
-cd frontend
-corepack pnpm build
-```
+Edit `static\index.html`, `static\app.css`, `static\app.js` and hard-refresh. No build step.
 
 ## Debug Commands
 
@@ -253,9 +279,9 @@ Use the virtual environment Python after setup:
 ## Documentation
 
 - `docs\PARAMETERS.md`: profile and CrispASR flag reference.
-- `docs\changelog.md`: public release notes.
 - `docs\third-party.md`: third-party runtime and model license notes.
 - `profiles\profile.ja.example.json`: public Japanese live-subtitle example profile.
+- `profiles\profile.ja.colab.example.json`: public Japanese Colab remote example profile.
 
 ## License
 

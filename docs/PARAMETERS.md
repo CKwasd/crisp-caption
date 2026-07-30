@@ -7,7 +7,7 @@ Current practical profile baseline:
 ```text
 --backend cohere
 -l ja
--m ../models/cohere-asr-ja-v0.1-q4_k.gguf
+-m ../models/cohere-asr-ja-q6_k.gguf
 --stream-json
 --stream-final-mode redecode
 --stream-utterance-max-sec 60
@@ -41,12 +41,23 @@ Current practical profile baseline:
 ## Backend And Model Flags
 
 Model paths inside `crisp_args` are resolved relative to the profile JSON file when they come from a config file.
+Remote ASR profiles are the exception: paths are passed through unchanged so they can refer to files inside the Colab runtime.
 
 | Flag | Current setting | Effect | Notes |
 |---|---|---|---|
 | `--backend` | `cohere` | Selects the ASR backend. | Current tested Japanese profile uses Cohere ASR. |
 | `-l` | `ja` | Source language. | Set to match the content. |
-| `-m` | `cohere-asr-ja-v0.1-q4_k.gguf` | ASR model path. | Must exist locally. |
+| `-m` | `cohere-asr-ja-q6_k.gguf` | ASR model path. | Must exist locally. |
+
+## ASR Runtime Mode
+
+| Key | Current setting | Effect |
+|---|---|---|
+| `asr_mode` | `local` | `local` starts a Windows CrispASR subprocess. `remote` connects to a WebSocket ASR service such as Colab. |
+| `remote_asr_url` | empty | WSS endpoint used only when `asr_mode` is `remote`, for example `wss://<host>.trycloudflare.com/asr/stream`. |
+| `remote_asr_bearer_env` | `CRISPASR_REMOTE_TOKEN` | Environment variable containing the Bearer token for the remote ASR WebSocket. |
+
+Remote ASR sends an initial JSON config frame containing `crisp_args`, then streams 16 kHz mono s16le PCM binary frames. The remote service returns CrispASR-compatible JSON text events, so local and remote modes produce the same UI events.
 
 ## VAD Flags
 
@@ -85,7 +96,10 @@ Do not pass `--punc-model` in realtime JSON+VAD profiles for now.
 
 Translation is final-only. Partial ASR remains visible as preview text, but partials are not sent to the translation server.
 
+For remote Colab translation, set `translate_url` to the Cloudflare Tunnel `/v1/chat/completions` URL and set `OPENAI_API_KEY` to the token printed by the Colab proxy. `scripts/run-windows.bat` skips local llama.cpp startup when `translate_url` is not localhost.
+
 ## Choosing A Profile
 
 - Use `profiles/profile.ja.example.json` as the public Japanese baseline, then copy it to a local ignored profile before editing machine-specific paths.
+- Use `profiles/profile.ja.colab.example.json` when ASR and translation run in Colab behind Cloudflare Tunnel.
 - Keep profile count small; each profile should represent a real live-operation choice.

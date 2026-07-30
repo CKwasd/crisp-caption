@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import sys
 
 logger = logging.getLogger(__name__)
 
@@ -11,13 +10,11 @@ def configure_logging(verbose: bool) -> None:
     Forwarded CrispASR stderr uses DEBUG unless ``relay_stderr(..., crisp_verbose=True)`` (see ``-v``).
 
     With ``verbose``, raise aioice-related loggers to DEBUG and HTTP access to INFO."""
-    kw: dict[str, object] = {
-        "level": logging.INFO,
-        "format": "%(levelname)s:%(name)s:%(message)s",
-    }
-    if sys.version_info >= (3, 8):
-        kw["force"] = True
-    logging.basicConfig(**kw)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s:%(name)s:%(message)s",
+        force=True,
+    )
 
     if verbose:
         logging.getLogger("aiohttp.access").setLevel(logging.INFO)
