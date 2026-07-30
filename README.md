@@ -15,7 +15,7 @@ browser tab/mic audio
   -> browser transcript / transparent overlay / OBS overlay
 ```
 
-This repository does not vendor runtime binaries or model files. The setup scripts download Vulkan builds into `tools/` and model files into `models/`.
+This repository does not vendor runtime binaries or model files. The setup scripts download GPU-accelerated builds (CUDA if available, else Vulkan) into `tools/` and model files into `models/`.
 
 ## Demo
 
@@ -92,10 +92,9 @@ On Chromium-based browsers, enable tab audio in the browser capture picker.
 
 `scripts\run-windows.bat`
 
-- Starts the llama.cpp translation server in a separate window.
-- Waits for `http://127.0.0.1:8080/health`.
-- Starts the CrispASR bridge.
-- Opens `http://127.0.0.1:8765/`.
+- Starts the llama.cpp translation server in a separate window if the local model and binary exist and the server is not already running.
+- Opens `http://127.0.0.1:8765/` (profile selection starts the bridge on first connect).
+- Uses `scripts\_run_py.bat` to resolve the Python interpreter from `.venv`.
 
 ## Hardware And Runtime
 
@@ -109,13 +108,14 @@ Recommended baseline:
 - Python 3.11+
 - Chromium-based browser for tab audio capture
 
-If the translation server exits immediately or runs out of memory, try:
+If the translation server exits immediately or runs out of memory, set the environment variable before starting:
 
 ```bat
-scripts\start-translation-server-low-vram-windows.bat
+set LOW_VRAM=1
+scripts\start-translation-server-windows.bat
 ```
 
-The low-VRAM server uses smaller llama.cpp context/batch settings. It may be slower or have less translation context.
+Low-VRAM mode uses smaller llama.cpp context/batch settings (`-c 4096 -b 512 -ub 256`). It may be slower or have less translation context.
 
 ## Colab Remote Compute
 
@@ -256,7 +256,7 @@ Common fixes:
 - Missing CrispASR: run `scripts\download-crispasr-windows.bat`.
 - Missing llama.cpp: run `scripts\download-llama-cpp-windows.bat`.
 - Missing models: run `scripts\models-download.bat`.
-- Translation server out of memory: use `scripts\start-translation-server-low-vram-windows.bat`.
+- Translation server out of memory: use `set LOW_VRAM=1 && scripts\start-translation-server-windows.bat`.
 - Remote Colab 401/unauthorized: set `CRISPASR_REMOTE_TOKEN` for ASR and `OPENAI_API_KEY` for translation.
 - Remote Colab connection failure: refresh the Cloudflare Tunnel URLs in `profiles\profile.ja.json`.
 - Browser UI missing: ensure `static\index.html` exists.
