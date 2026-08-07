@@ -1,12 +1,15 @@
 {
   "name": "Japanese stable example",
-  "description": "Example profile for steadier Japanese live subtitles. Copy to profile.ja.json. Includes warmup + partial throttle.",
-  "tags": ["live", "stable", "ja", "example"],
+  "description": "Example profile for steadier Japanese live subtitles. Copy to profile.ja.json. Partial throttle enabled.",
+  "tags": [
+    "live",
+    "stable",
+    "ja",
+    "example"
+  ],
   "host": "127.0.0.1",
   "port": 8765,
   "crispasr": "tools/crispasr/crispasr.exe",
-  "warmup_sec": 3,
-  "warmup_audio": "",
   "translate_model": "Hy-MT2-1.8B",
   "translate_url": "http://127.0.0.1:8080/v1/chat/completions",
   "translate_window": 8,
@@ -17,6 +20,9 @@
   "max_tokens": 4096,
   "translate_prompt_file": "",
   "glossary_file": "",
+  "overlay_interj_len": 3,
+  "overlay_interj_ratio": 0.4,
+  "overlay_interj_gap_sec": 2.0,
   "crisp_args": [
     "--backend",
     "cohere",
@@ -52,5 +58,6 @@
     "10",
     "-vp",
     "110"
-  ]
+  ],
+  "overlay_mode": "both"
 }

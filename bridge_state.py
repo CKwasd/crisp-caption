@@ -21,7 +21,12 @@ class BridgeRealtimeState:
     suppress_transcripts: bool = False
     active_profile: str = ""
     crisp_status: str = "stopped"
+    crisp_epoch: int = 0
     last_audio_t: float | None = None
+    overlay_interj_len: int = 3
+    overlay_interj_ratio: float = 0.4
+    overlay_interj_gap_sec: float = 2.0
+    overlay_mode: str = "both"
 
 
 def _calc_lag_sec(state: BridgeRealtimeState) -> float:
@@ -43,6 +48,7 @@ async def broadcast_health(state: BridgeRealtimeState) -> None:
             "last_error": state.last_error,
             "active_profile": state.active_profile,
             "crisp_status": state.crisp_status,
+            "crisp_epoch": state.crisp_epoch,
             "latency_sec": _calc_lag_sec(state),
         },
     )

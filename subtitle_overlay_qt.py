@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import json
 import signal
 import sys
+from pathlib import Path
 
 from overlay_page import qt_overlay_html
 
@@ -39,6 +41,47 @@ GWL_EXSTYLE = -20
 WS_EX_TRANSPARENT = 0x00000020
 WS_EX_LAYERED = 0x00080000
 VK_CONTROL = 0x11
+CONFIG_PATH = Path.home() / ".crispasr-overlay.json"
+DEFAULT_WIDTH = 1180
+DEFAULT_HEIGHT = 340
+DEFAULT_FONT_PX = 34
+
+
+def load_overlay_config() -> dict[str, int]:
+    try:
+        data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out: dict[str, int] = {}
+    for key in ("x", "y", "width", "height", "font"):
+        if key in data:
+            try:
+                out[key] = int(data[key])
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+def save_overlay_config(geometry, font_px: int) -> None:
+    # ponytail: best-effort, saved on shutdown only; losing it on crash is acceptable
+    try:
+        CONFIG_PATH.write_text(
+            json.dumps(
+                {
+                    "x": geometry.x(),
+                    "y": geometry.y(),
+                    "width": geometry.width(),
+                    "height": geometry.height(),
+                    "font": font_px,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
 
 
 class ResizeHandlesLayer(QWidget):
@@ -88,16 +131,21 @@ class SubtitleOverlay(QWidget):
         self,
         *,
         ws_url: str,
-        width: int,
-        height: int,
+        width: int | None,
+        height: int | None,
         x: int | None,
         y: int | None,
-        font_px: int,
+        font_px: int | None,
+        mode: str,
+        hold_sec: float,
+        fade_sec: float,
         edge_px: int,
         corner_px: int,
         normal_window: bool,
     ) -> None:
         super().__init__()
+        cfg = load_overlay_config()
+        self.font_px = font_px if font_px is not None else int(cfg.get("font") or DEFAULT_FONT_PX)
         self.edge_handle_px = max(8, edge_px)
         self.corner_handle_px = max(self.edge_handle_px, corner_px)
         self._control_down = False
@@ -125,7 +173,10 @@ class SubtitleOverlay(QWidget):
         self.view.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.view.setStyleSheet("background: transparent;")
         self.view.page().setBackgroundColor(QColor(0, 0, 0, 0))
-        self.view.setHtml(qt_overlay_html(ws_url, font_px), QUrl("http://127.0.0.1:8765/"))
+        self.view.setHtml(
+            qt_overlay_html(ws_url, self.font_px, mode=mode, hold_sec=hold_sec, fade_sec=fade_sec),
+            QUrl("http://127.0.0.1:8765/"),
+        )
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -199,8 +250,11 @@ class SubtitleOverlay(QWidget):
         self.control_timer.timeout.connect(self._sync_control_state)
         self.control_timer.start(50)
 
-        self.resize(width, height)
-        self._place_window(x, y)
+        self.resize(
+            width if width is not None else cfg.get("width", DEFAULT_WIDTH),
+            height if height is not None else cfg.get("height", DEFAULT_HEIGHT),
+        )
+        self._place_window(x if x is not None else cfg.get("x"), y if y is not None else cfg.get("y"))
 
         QShortcut(QKeySequence("Esc"), self, activated=self._hide_frame)
         QShortcut(QKeySequence("Ctrl+Q"), self, activated=self.shutdown)
@@ -247,6 +301,30 @@ class SubtitleOverlay(QWidget):
             return
         super().mouseReleaseEvent(event)
 
+    def wheelEvent(self, event) -> None:  # noqa: N802, ANN001
+        if self._is_control_pressed():
+            delta = event.angleDelta().y()
+            if delta:
+                new_font = max(14, min(96, self.font_px + (2 if delta > 0 else -2)))
+                if new_font != self.font_px:
+                    self.font_px = new_font
+                    self._apply_font()
+            event.accept()
+            return
+        super().wheelEvent(event)
+
+    def _apply_font(self) -> None:
+        main = self.font_px
+        js = (
+            f"document.getElementById('main').style.fontSize='{main}px';"
+            f"document.getElementById('partial').style.fontSize='{max(16, round(main * 0.72))}px';"
+            f"document.getElementById('trans').style.fontSize='{max(16, round(main * 0.88))}px';"
+        )
+        try:
+            self.view.page().runJavaScript(js)
+        except RuntimeError:
+            pass
+
     def keyPressEvent(self, event) -> None:  # noqa: N802, ANN001
         if event.key() == Qt.Key_Control and self._cursor_inside_overlay:
             self._show_frame()
@@ -283,6 +361,7 @@ class SubtitleOverlay(QWidget):
         if self._shutting_down:
             return
         self._shutting_down = True
+        save_overlay_config(self.geometry(), self.font_px)
         self.control_timer.stop()
         self.leave_timer.stop()
         self._set_mouse_passthrough(False)
@@ -523,11 +602,34 @@ class SubtitleOverlay(QWidget):
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ws-url", default=DEFAULT_WS_URL, help="Bridge WebSocket URL.")
-    parser.add_argument("--width", type=int, default=1180, help="Overlay window width.")
-    parser.add_argument("--height", type=int, default=340, help="Overlay window height.")
+    parser.add_argument("--width", type=int, default=None, help="Overlay window width.")
+    parser.add_argument("--height", type=int, default=None, help="Overlay window height.")
     parser.add_argument("--x", type=int, default=None, help="Overlay left position.")
     parser.add_argument("--y", type=int, default=None, help="Overlay top position.")
-    parser.add_argument("--font-px", type=int, default=34, help="Main subtitle font size.")
+    parser.add_argument(
+        "--font-px",
+        type=int,
+        default=None,
+        help="Main subtitle font size (default: saved config or 34).",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=("source", "trans", "both"),
+        default="both",
+        help="Display mode: source text, translation (fallback source), or both lines.",
+    )
+    parser.add_argument(
+        "--hold",
+        type=float,
+        default=2.0,
+        help="Minimum seconds each line stays before the next may replace it.",
+    )
+    parser.add_argument(
+        "--fade",
+        type=float,
+        default=4.0,
+        help="Seconds of inactivity before the subtitle fades out (0 = never).",
+    )
     parser.add_argument(
         "--edge-px",
         type=int,
@@ -563,6 +665,9 @@ def main(argv: list[str]) -> int:
         x=ns.x,
         y=ns.y,
         font_px=ns.font_px,
+        mode=ns.mode,
+        hold_sec=ns.hold,
+        fade_sec=ns.fade,
         edge_px=ns.edge_px,
         corner_px=ns.corner_px,
         normal_window=ns.normal_window,

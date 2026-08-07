@@ -1,6 +1,7 @@
 (() => {
   const ICE = [{ urls: 'stun:stun.l.google.com:19302' }];
   const $ = (id) => document.getElementById(id);
+  const LAST_PROFILE_KEY = 'crispcaption-last-profile';
   const state = {
     wsState: 'connecting', rtcState: 'idle', audioState: 'none',
     crisp: 'stopped', profile: '', profiles: [],
@@ -76,7 +77,7 @@
     $('btn-mic').disabled = !captureAllowed();
     $('btn-stop').disabled = state.audioState === 'none';
     $('profile-select').disabled = state.profileBusy;
-    $('btn-load').style.display = $('profile-select').value && state.crisp !== 'running' && !state.profileBusy ? '' : 'none';
+    $('btn-load').disabled = state.profileBusy;
   }
   function rowKey(ev) {
     return ev.utterance_id != null ? `u:${ev.utterance_id}` : `s:${ev.seq}`;
@@ -253,6 +254,12 @@
       state.stats.error += 1;
       log(message);
     } else if (msg.type === 'health') {
+      if (state.crispEpoch == null) state.crispEpoch = msg.crisp_epoch;
+      else if (msg.crisp_epoch != null && msg.crisp_epoch !== state.crispEpoch) {
+        state.crispEpoch = msg.crisp_epoch;
+        state.rows.clear();
+        state.finalSeq.clear();
+      }
       state.translator = msg.translator_status || 'unknown';
       state.queue = Number(msg.translation_queue_size) || 0;
       state.profile = msg.active_profile || state.profile;
@@ -272,7 +279,7 @@
       if (!res.ok) throw new Error(`GET /profiles failed ${res.status}`);
       const data = await res.json();
       state.profiles = data.profiles || [];
-      state.profile = data.active || '';
+      state.profile = data.active || localStorage.getItem(LAST_PROFILE_KEY) || '';
       state.crisp = data.crisp_status || 'stopped';
       renderProfiles();
       paint();
@@ -303,6 +310,7 @@
       state.profiles = data.profiles || state.profiles;
       state.profile = data.active || name;
       state.crisp = data.crisp_status || state.crisp;
+      localStorage.setItem(LAST_PROFILE_KEY, name);
       log(`Profile selected: ${state.profile}`);
       renderProfiles();
     } catch (e) {
@@ -325,9 +333,28 @@
       const res = await fetch('/overlay/start', { method: 'POST' });
       if (!res.ok) throw new Error((await res.text()) || `Overlay start failed (${res.status})`);
       log('Subtitle overlay started');
+      $('btn-overlay-stop').disabled = false;
     } catch (e) {
       log(`Overlay error: ${e.message || e}`);
     }
+  }
+  async function stopOverlay() {
+    try {
+      const res = await fetch('/overlay/stop', { method: 'POST' });
+      if (!res.ok) throw new Error(`Overlay stop failed (${res.status})`);
+      log('Subtitle overlay stopped');
+      $('btn-overlay-stop').disabled = true;
+    } catch (e) {
+      log(`Overlay error: ${e.message || e}`);
+    }
+  }
+  async function syncOverlayStatus() {
+    try {
+      const res = await fetch('/overlay/status');
+      if (!res.ok) return;
+      const data = await res.json();
+      $('btn-overlay-stop').disabled = !data.running;
+    } catch (_) {}
   }
   function vttTime(sec) {
     const v = Math.max(0, Number(sec) || 0);
@@ -360,6 +387,7 @@
   $('btn-stop').onclick = stopCapture;
   $('btn-clear').onclick = clearTranscript;
   $('btn-overlay').onclick = startOverlay;
+  $('btn-overlay-stop').onclick = stopOverlay;
   $('btn-export').onclick = exportVtt;
   $('btn-diag').onclick = () => window.open('/diagnostics', '_blank');
   $('btn-settings').onclick = () => $('settings').classList.toggle('open');
@@ -380,5 +408,6 @@
 
   connectWs();
   loadProfiles();
+  syncOverlayStatus();
   paint();
 })();

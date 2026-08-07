@@ -35,8 +35,16 @@ class CrispRuntime:
         async with self.lock:
             await self._stop_locked()
             self._drain_pcm_queue()
+            self._drain_transcript_queue()
 
             self.state.active_profile = cfg.profile_name
+            self.state.crisp_epoch += 1
+            self.state.overlay_interj_len = cfg.overlay_interj_len
+            self.state.overlay_interj_ratio = cfg.overlay_interj_ratio
+            self.state.overlay_interj_gap_sec = cfg.overlay_interj_gap_sec
+            self.state.overlay_mode = cfg.overlay_mode
+            self.state.first_pcm_mono = None
+            self.state.last_audio_t = None
             self.state.crisp_status = "starting"
             self.state.last_error = ""
             self.state.translator_status = "checking" if cfg.translate_enabled else "disabled"
@@ -63,8 +71,6 @@ class CrispRuntime:
                     crisp_exe=cfg.crisp_exe,
                     crisp_hide_stderr=cfg.crisp_hide_stderr,
                     verbose=cfg.verbose,
-                    warmup_sec=cfg.warmup_sec,
-                    warmup_audio=cfg.warmup_audio,
                     **common,
                 )
             try:
@@ -141,6 +147,15 @@ class CrispRuntime:
             except asyncio.QueueEmpty:
                 return
 
+    def _drain_transcript_queue(self) -> None:
+        q = self.state.transcript_queue
+        while True:
+            try:
+                q.get_nowait()
+                q.task_done()
+            except asyncio.QueueEmpty:
+                return
+
 
 def discover_profiles(profiles_dir: Path) -> list[dict[str, object]]:
     profiles: list[dict[str, object]] = []
@@ -205,13 +220,20 @@ async def async_main(cfg: BridgeRunConfig, host: str, port: int) -> None:
 
     async def select_profile(name: str) -> dict[str, object]:
         path = resolve_profile_path(profiles_dir, name)
-        try:
-            await runtime.start(config_from_profile(path))
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Profile start failed: %s", exc)
-            if not bridge_state.last_error:
-                bridge_state.last_error = str(exc)
-            bridge_state.crisp_status = "error"
+        cfg = config_from_profile(path)
+
+        async def _start() -> None:
+            try:
+                await runtime.start(cfg)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Profile start failed: %s", exc)
+                if not bridge_state.last_error:
+                    bridge_state.last_error = str(exc)
+                bridge_state.crisp_status = "error"
+
+        # ponytail: don't block select on process spawn + model load; let
+        # the UI overlap capture setup with it. Errors still arrive via health.
+        asyncio.create_task(_start())
         return {
             "profiles": discover_profiles(profiles_dir),
             "active": bridge_state.active_profile,

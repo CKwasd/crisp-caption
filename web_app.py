@@ -79,10 +79,35 @@ def make_app(
             return web.Response(status=503, text="Diagnostics page not found")
         return web.FileResponse(diag)
 
+    def _overlay_num(query, name, default, lo, hi):
+        try:
+            value = float(query.get(name, default))
+        except (TypeError, ValueError):
+            return default
+        return min(hi, max(lo, value))
+
     async def obs_overlay(req: web.Request) -> web.Response:
         ws_proto = "wss" if req.secure else "ws"
+        q = req.query
+        mode = q.get("mode", state.overlay_mode)
+        if mode not in ("source", "trans", "both"):
+            mode = "both"
+        pos = q.get("pos", "bottom")
+        if pos not in ("top", "bottom"):
+            pos = "bottom"
         return web.Response(
-            text=obs_overlay_html(f"{ws_proto}://{req.host}/ws"),
+            text=obs_overlay_html(
+                f"{ws_proto}://{req.host}/ws",
+                mode=mode,
+                hold_sec=_overlay_num(q, "hold", 2.0, 0.5, 30.0),
+                fade_sec=_overlay_num(q, "fade", 4.0, 0.0, 300.0),
+                font=_overlay_num(q, "font", 1.0, 0.5, 4.0),
+                pos=pos,
+                demo=q.get("demo") == "1",
+                interj_len=int(_overlay_num(q, "interj_len", state.overlay_interj_len, 0.0, 10.0)),
+                interj_ratio=_overlay_num(q, "interj_ratio", state.overlay_interj_ratio, 0.05, 1.0),
+                interj_gap_sec=_overlay_num(q, "interj_gap", state.overlay_interj_gap_sec, 0.0, 30.0),
+            ),
             content_type="text/html",
         )
 
@@ -126,6 +151,7 @@ def make_app(
                 pcs.discard(pc)
                 drain_pcm_queue(pcm_queue)
                 state.first_pcm_mono = None
+                state.last_audio_t = None
                 if not any(p.connectionState not in ("closed", "failed") for p in pcs):
                     state.last_error = "" if pc.connectionState == "closed" else "WebRTC session ended."
                     await broadcast_health(state)
@@ -137,6 +163,7 @@ def make_app(
                     return
 
                 state.first_pcm_mono = None
+                state.last_audio_t = None
                 asyncio.create_task(consume_track(track, pcm_queue, state))
 
             remote = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
@@ -208,6 +235,24 @@ def make_app(
         logger.info("Subtitle overlay started pid=%s ws=%s", overlay_process.pid, ws_url)
         return web.json_response({"status": "started", "pid": overlay_process.pid})
 
+    async def stop_overlay(_req: web.Request) -> web.Response:
+        nonlocal overlay_process
+        proc = overlay_process
+        running = proc is not None and proc.poll() is None
+        if running:
+            assert proc is not None
+            proc.terminate()
+            logger.info("Subtitle overlay stopped pid=%s", proc.pid)
+        overlay_process = None
+        return web.json_response({"status": "stopped" if running else "not_running"})
+
+    async def overlay_status(_req: web.Request) -> web.Response:
+        nonlocal overlay_process
+        proc = overlay_process
+        if proc is None or proc.poll() is not None:
+            return web.json_response({"running": False, "pid": None})
+        return web.json_response({"running": True, "pid": proc.pid})
+
     async def cleanup(_app: web.Application) -> None:
         if overlay_process and overlay_process.poll() is None:
             overlay_process.terminate()
@@ -223,6 +268,8 @@ def make_app(
     app.router.add_get("/obs-overlay", obs_overlay)
     app.router.add_post("/offer", offer)
     app.router.add_post("/overlay/start", start_overlay)
+    app.router.add_post("/overlay/stop", stop_overlay)
+    app.router.add_get("/overlay/status", overlay_status)
     app.router.add_get("/profiles", profiles_handler)
     app.router.add_post("/profiles/select", select_profile_handler)
     app.router.add_get("/ws", ws_handler)

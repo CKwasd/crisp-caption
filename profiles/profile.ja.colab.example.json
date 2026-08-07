@@ -1,15 +1,19 @@
 {
   "name": "Japanese Colab remote example",
-  "description": "Remote ASR/translation via Colab tunnel. warmup_* is local-only (ignored in remote mode). Copy to profile.ja.json and paste tunnel URLs.",
-  "tags": ["live", "stable", "ja", "colab", "remote"],
+  "description": "Remote ASR/translation via Colab tunnel. Copy to profile.ja.json and paste tunnel URLs.",
+  "tags": [
+    "live",
+    "stable",
+    "ja",
+    "colab",
+    "remote"
+  ],
   "host": "127.0.0.1",
   "port": 8765,
   "asr_mode": "remote",
   "remote_asr_url": "wss://YOUR-COLAB-TUNNEL.trycloudflare.com/asr/stream",
   "remote_asr_bearer_env": "CRISPASR_REMOTE_TOKEN",
   "crispasr": "tools/crispasr/crispasr.exe",
-  "warmup_sec": 0,
-  "warmup_audio": "",
   "translate_model": "Hy-MT2-1.8B",
   "translate_url": "https://YOUR-COLAB-TUNNEL.trycloudflare.com/v1/chat/completions",
   "translate_window": 8,
@@ -20,6 +24,9 @@
   "max_tokens": 4096,
   "translate_prompt_file": "",
   "glossary_file": "",
+  "overlay_interj_len": 3,
+  "overlay_interj_ratio": 0.4,
+  "overlay_interj_gap_sec": 2.0,
   "crisp_args": [
     "--backend",
     "cohere",
@@ -55,5 +62,6 @@
     "10",
     "-vp",
     "110"
-  ]
+  ],
+  "overlay_mode": "both"
 }

@@ -5,9 +5,7 @@ import json
 import logging
 import os
 import shutil
-import wave
 from collections.abc import Mapping
-from pathlib import Path
 
 import aiohttp
 
@@ -25,54 +23,6 @@ from crisp_process import (
 logger = logging.getLogger(__name__)
 
 
-def load_warmup_pcm(path: str, max_sec: float, sample_rate: int = SAMPLE_RATE) -> bytes:
-    """Load up to max_sec of 16-bit mono PCM from WAV or raw s16le. Empty path → silence."""
-    n = max(0, int(max_sec * sample_rate * 2))
-    if n <= 0:
-        return b""
-    if not path:
-        return b"\x00" * n
-    p = Path(path)
-    if not p.is_file():
-        logger.warning("warmup_audio not found: %s (using silence)", path)
-        return b"\x00" * n
-    suffix = p.suffix.lower()
-    if suffix in {".pcm", ".s16le", ".raw"}:
-        data = p.read_bytes()
-        return data[:n] if len(data) >= n else data + b"\x00" * (n - len(data))
-    if suffix == ".wav":
-        with wave.open(str(p), "rb") as w:
-            if w.getnchannels() != 1 or w.getsampwidth() != 2:
-                logger.warning("warmup WAV must be mono 16-bit; using silence (%s)", path)
-                return b"\x00" * n
-            if w.getframerate() != sample_rate:
-                logger.warning(
-                    "warmup WAV rate %d != %d; using as-is (best-effort)",
-                    w.getframerate(),
-                    sample_rate,
-                )
-            data = w.readframes(int(max_sec * w.getframerate()) + 1)
-        return data[:n] if len(data) >= n else data + b"\x00" * (n - len(data))
-    logger.warning("warmup_audio unsupported type %s (use .wav/.s16le); silence", suffix)
-    return b"\x00" * n
-
-
-async def feed_warmup_pcm(
-    pcm_queue: asyncio.Queue[bytes],
-    pcm: bytes,
-    *,
-    chunk_ms: int = 100,
-    sample_rate: int = SAMPLE_RATE,
-) -> None:
-    if not pcm:
-        return
-    chunk = max(2, int(sample_rate * 2 * chunk_ms / 1000))
-    if chunk % 2:
-        chunk += 1
-    for i in range(0, len(pcm), chunk):
-        await pcm_queue.put(pcm[i : i + chunk])
-
-
 class LocalCrispAsrBackend:
     def __init__(
         self,
@@ -87,8 +37,6 @@ class LocalCrispAsrBackend:
         enqueue_for_translate: bool,
         print_raw_crisp_events: bool,
         debug_timestamps: bool,
-        warmup_sec: float = 0.0,
-        warmup_audio: str = "",
     ) -> None:
         self.state = state
         self.pcm_queue = pcm_queue
@@ -100,8 +48,6 @@ class LocalCrispAsrBackend:
         self.enqueue_for_translate = enqueue_for_translate
         self.print_raw_crisp_events = print_raw_crisp_events
         self.debug_timestamps = debug_timestamps
-        self.warmup_sec = max(0.0, float(warmup_sec or 0.0))
-        self.warmup_audio = (warmup_audio or "").strip()
         self.proc: asyncio.subprocess.Process | None = None
         self.tasks: list[asyncio.Task[object]] = []
 
@@ -161,29 +107,9 @@ class LocalCrispAsrBackend:
         logger.info("Queueing initial %d-byte silence (one Crisp stream step) onto stdin.", preload)
         await self.pcm_queue.put(b"\x00" * preload)
 
-        if self.warmup_sec > 0:
-            await self._run_warmup()
-        else:
-            self.state.suppress_transcripts = False
-            self.state.crisp_status = "running"
-            await broadcast_health(self.state)
-
-    async def _run_warmup(self) -> None:
-        self.state.suppress_transcripts = True
-        self.state.crisp_status = "warming"
-        await broadcast_health(self.state)
-        pcm = load_warmup_pcm(self.warmup_audio, self.warmup_sec)
-        src = self.warmup_audio or "silence"
-        logger.info("Warmup %.1fs via %s (%d bytes)", self.warmup_sec, src, len(pcm))
-        await feed_warmup_pcm(self.pcm_queue, pcm)
-        # let crispasr drain + finish first graphs; silence settles faster than speech
-        settle = min(8.0, max(1.5, self.warmup_sec * 0.35))
-        await asyncio.sleep(settle)
         self.state.suppress_transcripts = False
-        self.state.first_pcm_mono = None
         self.state.crisp_status = "running"
         await broadcast_health(self.state)
-        logger.info("Warmup done (settled %.1fs); live transcripts enabled", settle)
 
     async def stop(self) -> None:
         self.state.suppress_transcripts = False

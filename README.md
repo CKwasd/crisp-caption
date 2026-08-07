@@ -149,10 +149,10 @@ On Windows, copy `profiles\profile.ja.colab.example.json` to `profiles\profile.j
 Set the token in the same terminal before starting the bridge, or use the helper script:
 
 ```bat
-colab-token.bat
+scripts\colab-token.bat
 ```
 
-The helper prompts for the token, sets both `CRISPASR_REMOTE_TOKEN` and `OPENAI_API_KEY`, then launches the bridge.
+The helper prompts for the token and the Cloudflare Tunnel URL, patches `profiles\profile.ja.json` with both, sets `CRISPASR_REMOTE_TOKEN` and `OPENAI_API_KEY`, then launches the bridge.
 
 Manual equivalent:
 
@@ -215,8 +215,11 @@ Controls:
 - Hold `Ctrl` to show the control frame.
 - Hold `Ctrl` and drag the middle area to move the overlay.
 - Hold `Ctrl` and drag the handles to resize it.
+- Hold `Ctrl` and scroll to resize the subtitle text.
 - Hold `Ctrl` and click `x` to close it.
 - `Ctrl+Q` also closes the overlay.
+
+Overlay position, size, and font size are remembered across restarts in `~\.crispasr-overlay.json`. Click `Stop Overlay` in the browser UI to close it.
 
 ## OBS Overlay
 
@@ -227,6 +230,15 @@ http://127.0.0.1:8765/obs-overlay
 ```
 
 Set the Browser Source size to your canvas size, for example `1920 x 1080`. The page has a transparent background and connects to the same subtitle stream.
+
+Query parameters:
+
+- `mode=both|source|trans` — show both lines, source only, or translation only (default `both`, falls back to source when no translation).
+- `pos=bottom|top` — subtitle position (default `bottom`).
+- `hold=<sec>` — minimum seconds a line stays before the next may replace it (default `2`).
+- `fade=<sec>` — seconds of inactivity before fading out, `0` = never (default `4`).
+- `font=<scale>` — text size scale relative to the default (default `1`).
+- `demo=1` — show sample subtitles without a running bridge.
 
 ## Translation Server
 

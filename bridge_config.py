@@ -40,11 +40,13 @@ class BridgeRunConfig:
     translate_max_tokens: int = 256
     print_raw_crisp_events: bool = False
     debug_timestamps: bool = False
-    warmup_sec: float = 0.0
-    warmup_audio: str = ""
     translate_bearer: str | None = None
     system_prompt: str | None = None
     glossary: dict[str, str] | None = None
+    overlay_interj_len: int = 3
+    overlay_interj_ratio: float = 0.4
+    overlay_interj_gap_sec: float = 2.0
+    overlay_mode: str = "both"
 
 CRISP_PATH_VALUE_FLAGS = frozenset({"-m", "-vm", "--model", "--vad-model", "--punc-model"})
 
@@ -74,8 +76,10 @@ BRIDGE_CONFIG_KEYS = frozenset(
         "max_tokens",
         "print_raw_crisp_events",
         "debug_timestamps",
-        "warmup_sec",
-        "warmup_audio",
+        "overlay_interj_len",
+        "overlay_interj_ratio",
+        "overlay_interj_gap_sec",
+        "overlay_mode",
         "no_translate",
         "translate_prompt_file",
         "glossary_file",
@@ -220,19 +224,6 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
         action="store_true",
         help="Add bridge wall-clock/backlog timing fields to terminal transcript JSON for latency debugging.",
     )
-    p.add_argument(
-        "--warmup-sec",
-        type=float,
-        default=0.0,
-        help="Seconds of PCM to feed CrispASR at profile start before live capture (0=off). "
-        "Suppresses UI transcripts during warmup. Prefer a short speech clip via --warmup-audio for Cohere.",
-    )
-    p.add_argument(
-        "--warmup-audio",
-        default="",
-        metavar="PATH",
-        help="Optional 16 kHz mono WAV or raw s16le for warmup (uses first --warmup-sec). Silence if empty.",
-    )
 
     p.add_argument(
         "--translate-url",
@@ -299,6 +290,31 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
         action="store_true",
         help="Disable translation worker (WebSocket still receives transcripts only)",
     )
+    p.add_argument(
+        "--overlay-interj-len",
+        type=int,
+        default=3,
+        help="Overlay: max chars of a trailing final that gets merged into the current sentence (default 3).",
+    )
+    p.add_argument(
+        "--overlay-interj-ratio",
+        type=float,
+        default=0.4,
+        help="Overlay: merge threshold as ratio of the previous final length (default 0.4).",
+    )
+    p.add_argument(
+        "--overlay-interj-gap",
+        dest="overlay_interj_gap_sec",
+        type=float,
+        default=2.0,
+        help="Overlay: max seconds between finals for interjection merge (default 2.0).",
+    )
+    p.add_argument(
+        "--overlay-mode",
+        choices=("source", "trans", "both"),
+        default="both",
+        help="Overlay display mode: source only, translation only, or both (default both).",
+    )
     p.set_defaults(**defaults)
 
     cli_crisp = normalize_crisp_argv(crisp_argv)
@@ -321,15 +337,6 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
         crisp_argv = cli_crisp
 
     return ns, crisp_argv
-
-
-def _resolve_warmup_audio(path: str, config_path: str | None) -> str:
-    if not path:
-        return ""
-    if os.path.isabs(path) or not config_path:
-        return path
-    base = os.path.dirname(os.path.abspath(os.path.expanduser(config_path)))
-    return os.path.normpath(os.path.join(base, path))
 
 
 def run_config_from_ns(
@@ -366,11 +373,10 @@ def run_config_from_ns(
         translate_max_tokens=ns.translate_max_tokens,
         print_raw_crisp_events=ns.print_raw_crisp_events,
         debug_timestamps=ns.debug_timestamps,
-        warmup_sec=float(getattr(ns, "warmup_sec", 0.0) or 0.0),
-        warmup_audio=_resolve_warmup_audio(
-            str(getattr(ns, "warmup_audio", "") or "").strip(),
-            getattr(ns, "bridge_config_path", None),
-        ),
+        overlay_interj_len=int(ns.overlay_interj_len),
+        overlay_interj_ratio=float(ns.overlay_interj_ratio),
+        overlay_interj_gap_sec=float(ns.overlay_interj_gap_sec),
+        overlay_mode=str(ns.overlay_mode),
         translate_bearer=translate_bearer
         if translate_bearer is not None
         else (os.environ.get("OPENAI_API_KEY") or None),

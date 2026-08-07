@@ -98,6 +98,17 @@ Translation is final-only. Partial ASR remains visible as preview text, but part
 
 For remote Colab translation, set `translate_url` to the Cloudflare Tunnel `/v1/chat/completions` URL and set `OPENAI_API_KEY` to the token printed by the Colab proxy. `scripts/run-windows.bat` skips local llama.cpp startup when `translate_url` is not localhost.
 
+## Overlay Settings
+
+These profile keys control the subtitle overlay default behavior. The Qt overlay exposes `--mode`, `--hold`, and `--fade` flags; the OBS overlay takes `mode`, `pos`, `hold`, `fade`, `font`, and `demo` query parameters.
+
+| Key | Default | Effect |
+|---|---:|---|
+| `overlay_mode` | `both` | Display mode: `both` (source + translation), `source`, or `trans` (translation with source fallback). |
+| `overlay_interj_len` | `3` | Short trailing finals ("un", "ah") up to this many chars are merged into the previous subtitle line instead of replacing it. |
+| `overlay_interj_ratio` | `0.4` | Interjection merge threshold as a ratio of the previous final's length. |
+| `overlay_interj_gap_sec` | `2.0` | Max seconds between finals for the interjection merge to apply. |
+
 ## Choosing A Profile
 
 - Use `profiles/profile.ja.example.json` as the public Japanese baseline, then copy it to a local ignored profile before editing machine-specific paths.
