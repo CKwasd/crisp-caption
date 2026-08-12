@@ -1,0 +1,4 @@
+# Development / CI tooling (not needed at runtime).
+pytest>=8.0
+ruff>=0.4
+mypy>=1.10

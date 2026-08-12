@@ -7,11 +7,11 @@ from pathlib import Path
 import subprocess
 import sys
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 
 import av
 from aiohttp import WSMsgType, web
-from aiortc import RTCPeerConnection, RTCSessionDescription
+from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
 
 from bridge_state import BridgeRealtimeState, broadcast_health
 from crisp_process import SAMPLE_RATE
@@ -34,7 +34,7 @@ def drain_pcm_queue(pcm_queue: asyncio.Queue[bytes]) -> None:
 
 
 async def consume_track(
-    track,
+    track: MediaStreamTrack,
     pcm_queue: asyncio.Queue[bytes],
     state: BridgeRealtimeState,
 ) -> None:
@@ -79,7 +79,7 @@ def make_app(
             return web.Response(status=503, text="Diagnostics page not found")
         return web.FileResponse(diag)
 
-    def _overlay_num(query, name, default, lo, hi):
+    def _overlay_num(query: Mapping[str, str], name: str, default: float, lo: float, hi: float) -> float:
         try:
             value = float(query.get(name, default))
         except (TypeError, ValueError):
@@ -136,7 +136,17 @@ def make_app(
                 await broadcast_health(state)
                 return web.json_response({"error": msg}, status=409)
 
-            params = await req.json()
+            try:
+                params = await req.json()
+            except json.JSONDecodeError:
+                return web.json_response(
+                    {"error": "Expected a JSON body with 'sdp' and 'type'."}, status=400
+                )
+            if not isinstance(params, dict) or not params.get("sdp") or not params.get("type"):
+                return web.json_response(
+                    {"error": "Body must be a JSON object with non-empty 'sdp' and 'type'."},
+                    status=400,
+                )
 
             pc = RTCPeerConnection()
             pcs.add(pc)
@@ -157,7 +167,7 @@ def make_app(
                     await broadcast_health(state)
 
             @pc.on("track")
-            def _on_track(track) -> None:
+            def _on_track(track: MediaStreamTrack) -> None:
                 logger.info("track received kind=%s", track.kind)
                 if track.kind != "audio":
                     return

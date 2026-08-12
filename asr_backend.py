@@ -22,6 +22,11 @@ from crisp_process import (
 
 logger = logging.getLogger(__name__)
 
+# Remote ASR reconnect backoff (seconds). Start small, double up to a cap, and
+# keep retrying so transient Colab / Cloudflare Tunnel drops recover on their own.
+REMOTE_RECONNECT_INITIAL_SEC = 1.0
+REMOTE_RECONNECT_MAX_SEC = 30.0
+
 
 class LocalCrispAsrBackend:
     def __init__(
@@ -203,30 +208,20 @@ class RemoteCrispAsrBackend:
         self.state.last_error = ""
         await broadcast_health(self.state)
 
-        headers: Mapping[str, str] = {"Authorization": f"Bearer {self.bearer}"}
-        self.session = aiohttp.ClientSession(headers=headers)
         try:
-            logger.info("Connecting remote ASR profile=%s url=%s", self.profile_name, self.remote_asr_url)
-            self.ws = await self.session.ws_connect(self.remote_asr_url, heartbeat=20, max_msg_size=1024 * 1024)
-            await self.ws.send_str(json.dumps({"type": "config", "crisp_args": self.crisp_args}))
+            await self._connect()
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:
-            await self.session.close()
-            self.session = None
             self.state.crisp_status = "error"
             self.state.last_error = f"Remote ASR connection failed: {exc}"
             await broadcast_health(self.state)
             raise
 
-        preload = stream_step_bytes_from_extra(self.crisp_args)
-        self.state.stream_preload_sec = preload / (2 * SAMPLE_RATE)
-        await self.pcm_queue.put(b"\x00" * preload)
-
         self.tasks = [
             asyncio.create_task(self._send_pcm()),
             asyncio.create_task(self._receive_events()),
         ]
-        self.state.crisp_status = "running"
-        await broadcast_health(self.state)
 
     async def stop(self) -> None:
         for task in self.tasks:
@@ -241,43 +236,101 @@ class RemoteCrispAsrBackend:
             await self.session.close()
         self.session = None
 
+    async def _connect(self) -> None:
+        """(Re)establish the remote ASR WebSocket and send the config frame.
+
+        Closes any previous session so a reconnect does not leak sockets. On
+        success, queues the initial silence so the remote stream decode resumes.
+        """
+        if self.session is not None and not self.session.closed:
+            await self.session.close()
+        headers: Mapping[str, str] = {"Authorization": f"Bearer {self.bearer}"}
+        self.session = aiohttp.ClientSession(headers=headers)
+        try:
+            logger.info("Connecting remote ASR profile=%s url=%s", self.profile_name, self.remote_asr_url)
+            self.ws = await self.session.ws_connect(
+                self.remote_asr_url, heartbeat=20, max_msg_size=1024 * 1024
+            )
+            await self.ws.send_str(json.dumps({"type": "config", "crisp_args": self.crisp_args}))
+        except Exception:
+            if self.session is not None and not self.session.closed:
+                await self.session.close()
+            self.session = None
+            self.ws = None
+            raise
+
+        preload = stream_step_bytes_from_extra(self.crisp_args)
+        self.state.stream_preload_sec = preload / (2 * SAMPLE_RATE)
+        await self.pcm_queue.put(b"\x00" * preload)
+        self.state.crisp_status = "running"
+        self.state.last_error = ""
+        await broadcast_health(self.state)
+
     async def _send_pcm(self) -> None:
+        """Stream PCM to the current WebSocket.
+
+        During a reconnect the socket may be absent or closed; those chunks are
+        dropped (the reconnect queues fresh silence) instead of tearing the
+        whole backend down.
+        """
         assert self.ws
         try:
             while True:
                 chunk = await self.pcm_queue.get()
                 try:
-                    await self.ws.send_bytes(chunk)
+                    ws = self.ws
+                    if ws is not None and not ws.closed:
+                        await ws.send_bytes(chunk)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.warning("Remote ASR send failed (dropping chunk): %s", exc)
                 finally:
                     self.pcm_queue.task_done()
         except asyncio.CancelledError:
             raise
-        except Exception as exc:
-            self.state.crisp_status = "error"
-            self.state.last_error = f"Remote ASR send failed: {exc}"
-            await broadcast_health(self.state)
 
     async def _receive_events(self) -> None:
-        assert self.ws
         relay = CrispEventRelay(
             self.state,
             enqueue_for_translate=self.enqueue_for_translate,
             print_raw_crisp_events=self.print_raw_crisp_events,
             debug_timestamps=self.debug_timestamps,
         )
-        try:
-            async for msg in self.ws:
-                if msg.type == aiohttp.WSMsgType.TEXT:
-                    await relay.handle_line(msg.data)
-                elif msg.type == aiohttp.WSMsgType.ERROR:
-                    raise RuntimeError(f"remote ASR websocket failed: {self.ws.exception()}")
-            if self.state.crisp_status == "running":
-                self.state.crisp_status = "stopped"
+        backoff = REMOTE_RECONNECT_INITIAL_SEC
+        while True:
+            ws = self.ws
+            if ws is None or ws.closed:
+                try:
+                    await self._connect()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    self.state.crisp_status = "reconnecting"
+                    self.state.last_error = f"Remote ASR reconnect failed: {exc}"
+                    await broadcast_health(self.state)
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, REMOTE_RECONNECT_MAX_SEC)
+                    continue
+                backoff = REMOTE_RECONNECT_INITIAL_SEC
+                ws = self.ws
+                if ws is None:  # defensive: _connect sets it on success
+                    continue
+
+            try:
+                async for msg in ws:
+                    if msg.type == aiohttp.WSMsgType.TEXT:
+                        await relay.handle_line(msg.data)
+                    elif msg.type == aiohttp.WSMsgType.ERROR:
+                        raise RuntimeError(f"remote ASR websocket failed: {ws.exception()}")
                 self.state.last_error = "Remote ASR websocket closed."
-                await broadcast_health(self.state)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            self.state.crisp_status = "error"
-            self.state.last_error = f"Remote ASR receive failed: {exc}"
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self.state.last_error = f"Remote ASR receive failed: {exc}"
+                logger.warning("%s", self.state.last_error)
+
+            self.state.crisp_status = "reconnecting"
             await broadcast_health(self.state)
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, REMOTE_RECONNECT_MAX_SEC)

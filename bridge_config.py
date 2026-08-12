@@ -270,8 +270,8 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     p.add_argument(
         "--translate-max-tokens",
         type=int,
-        default=256,
-        help="Maximum number of tokens generated per translation request (default 256).",
+        default=4096,
+        help="Maximum number of tokens generated per translation request (default 4096).",
     )
     p.add_argument(
         "--translate-prompt-file",

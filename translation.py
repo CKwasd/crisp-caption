@@ -20,7 +20,7 @@ def build_glossary_text(glossary: dict[str, str]) -> str:
     if not glossary:
         return ""
     lines = "\n".join(f"- {k} => {v}" for k, v in glossary.items())
-    return f"术语表（必须固定使用以下译法）：\n{lines}"
+    return f"術語表（必須固定使用以下譯法）：\n{lines}"
 
 
 def clean_translation_output(text: str) -> str:
@@ -133,7 +133,7 @@ async def translator_health_monitor(
         except aiohttp.ClientConnectorError as ex:
             state.translator_status = "offline"
             state.last_error = f"llama-server connection refused: {ex}"
-        except asyncio.TimeoutError:
+        except TimeoutError:
             state.translator_status = "offline"
             state.last_error = "llama-server health check timeout"
         except Exception as ex:  # noqa: BLE001
@@ -251,7 +251,7 @@ async def translator_worker(
                     continue
         except asyncio.CancelledError:
             raise
-        except asyncio.TimeoutError:
+        except TimeoutError:
             await _report_translate_error(
                 state, ws_clients, transcript_queue, seq=seq, msg="translation timeout", status="offline"
             )

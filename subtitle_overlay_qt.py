@@ -64,7 +64,7 @@ def load_overlay_config() -> dict[str, int]:
     return out
 
 
-def save_overlay_config(geometry, font_px: int) -> None:
+def save_overlay_config(geometry: QRect, font_px: int) -> None:
     # ponytail: best-effort, saved on shutdown only; losing it on crash is acceptable
     try:
         CONFIG_PATH.write_text(

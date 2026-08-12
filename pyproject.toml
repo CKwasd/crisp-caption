@@ -1,0 +1,37 @@
+[project]
+name = "crisp-caption"
+version = "0.1.0"
+description = "Live Japanese captions and translation for browser audio, video, livestream, and OBS."
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+src = ["."]
+# One-off setup/downloader/notebook helpers have their own debt; keep ruff
+# focused on the core runtime modules and tests.
+extend-exclude = ["scripts", "tools", "colab"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N", "ANN", "B", "UP"]
+# The existing bridge code predates ruff and intentionally keeps some long
+# lines, unsorted imports, and unannotated test functions. These are accepted
+# project style for now rather than a large pre-existing cleanup.
+ignore = [
+  "E501",    # line too long (pre-existing throughout)
+  "I001",    # import sorting not enforced (pre-existing)
+  "E402",    # module-level import not at top (test_remote_asr stubs aiohttp)
+  "B010",    # setattr with constant (bridge_config argparse wiring)
+  "ANN201",  # test functions without return annotations (pre-existing)
+  "ANN401",  # allow dynamic typing (Any) for web/av boundaries
+]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = true
+no_implicit_optional = true
