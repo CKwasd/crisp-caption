@@ -464,31 +464,51 @@ def make_app(token: str, crispasr: Path, llama_base: str) -> web.Application:
     return app
 
 
-def display_copy_box(title: str, value: str) -> None:
-    """Show a large, click-to-select text box in Colab/Kaggle.
+def _print_value_box(title: str, value: str) -> None:
+    """Print one value so it is clearly visible in a Colab/Kaggle console.
 
-    Colab and Kaggle notebooks do not reliably support a clipboard Copy button,
-    so instead of depending on ``navigator.clipboard`` we render the value as a
-    big pre block with ``user-select: all`` and ``onclick=this.select()``. The
-    beginner clicks the box once, the whole value is selected, then Ctrl+C.
+    ``run_colab_remote.py`` runs as a ``!python`` subprocess, where
+    ``IPython.display.display()`` only prints ``<IPython.core.display.HTML
+    object>`` and does not render. So instead of relying on a notebook display
+    hook or a clipboard button, we print an obvious box with separation lines
+    that is guaranteed to be visible and easy to copy.
     """
-    import html as _html
+    bar = "=" * 60
+    print("", flush=True)
+    print(bar, flush=True)
+    print(f"  {title}", flush=True)
+    print(bar, flush=True)
+    print(f"  {value}", flush=True)
+    print(bar, flush=True)
+    print("  請全選這一行 → Ctrl+C 複製", flush=True)
+    print("", flush=True)
 
-    try:
-        from IPython.display import HTML, display
 
-        escaped = _html.escape(value)
-        display(
-            HTML(
-                "<div style='font-size:14px;margin-top:8px;font-weight:600;'>"
-                f"{_html.escape(title)}（點一下全選 → 按 Ctrl+C 複製）</div>"
-                "<pre style='font-size:18px;padding:14px 16px;background:#f4f4f4;"
-                "border:1px solid #ccc;border-radius:8px;user-select:all;cursor:text;"
-                f"white-space:pre-wrap;word-break:break-all;' onclick='this.select()'>{escaped}</pre>"
-            )
-        )
-    except Exception:  # pragma: no cover - non-notebook fallback
-        print(f"{title}: {value}", flush=True)
+def display_copy_box(title: str, value: str) -> None:
+    """Show a token/URL value prominently via print()."""
+    _print_value_box(title, value)
+
+
+def display_connection_block(token: str, url: str) -> None:
+    """Print the token and URL as two clearly separated steps.
+
+    On Windows ``colab-token.bat`` asks for the values in two prompts (Step 1 =
+    token, Step 2 = URL), so this prints them with matching step labels to make
+    it obvious which value goes where.
+    """
+    bar = "=" * 60
+    print("", flush=True)
+    print(bar, flush=True)
+    print("  在 Windows 執行 colab-token.bat，然後分別複製下面兩個值貼上", flush=True)
+    print(bar, flush=True)
+    print("  Step 1 - TOKEN（貼到 colab-token.bat 的 Step 1 提示）", flush=True)
+    print(f"  CRISPASR_REMOTE_TOKEN={token}", flush=True)
+    print(bar, flush=True)
+    print("  Step 2 - URL（貼到 colab-token.bat 的 Step 2 提示）", flush=True)
+    print(f"  TUNNEL={url}", flush=True)
+    print(bar, flush=True)
+    print("  請全選每一行 → Ctrl+C 複製", flush=True)
+    print("", flush=True)
 
 
 async def main() -> None:
@@ -577,6 +597,7 @@ async def main() -> None:
                 if not shown_url and "trycloudflare.com" in text:
                     shown_url = True
                     display_copy_box("Cloudflare 地址", text)
+                    display_connection_block(ns.token, text)
             elif tunnel.returncode is not None:
                 raise SystemExit(tunnel.returncode)
             else:

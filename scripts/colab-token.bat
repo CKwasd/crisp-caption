@@ -2,20 +2,48 @@
 setlocal
 cd /d "%~dp0\.."
 
+echo === crisp-caption Colab connection setup ===
+echo.
+echo 1) In Colab, copy the TOKEN line (CRISPASR_REMOTE_TOKEN=...)
+echo 2) In Colab, copy the URL line (TUNNEL=https://...trycloudflare.com)
+echo.
+echo Paste them below when prompted.
+echo.
+
+set /p CRISPASR_REMOTE_TOKEN=Step 1 - Paste the TOKEN: 
+set /p TUNNEL=Step 2 - Paste the Cloudflare URL: 
+
+if "%CRISPASR_REMOTE_TOKEN%"=="" (
+  echo [FAIL] No token provided.
+  pause
+  exit /b 1
+)
+if "%TUNNEL%"=="" (
+  echo [FAIL] No Cloudflare URL provided.
+  pause
+  exit /b 1
+)
+
+echo.
+echo Confirming your input:
+echo   Token: %CRISPASR_REMOTE_TOKEN%
+echo   URL:   %TUNNEL%
+echo.
+
+set OPENAI_API_KEY=%CRISPASR_REMOTE_TOKEN%
+
 if exist "profiles\profile.ja.json" (
   copy /Y "profiles\profile.ja.json" "profiles\profile.ja.json.bak" >nul
 )
 copy /Y "profiles\profile.ja.colab.example.json" "profiles\profile.ja.json" >nul
 
-set /p CRISPASR_REMOTE_TOKEN=Paste Colab token: 
-set /p TUNNEL=Paste Cloudflare URL (e.g. https://xxx.trycloudflare.com): 
-set OPENAI_API_KEY=%CRISPASR_REMOTE_TOKEN%
-
 set "HOST=%TUNNEL:http://=%"
 set "HOST=%HOST:https://=%"
 set "HOST=%HOST:/=%"
 
-powershell -NoProfile -Command "$p='profiles\profile.ja.json'; $j=Get-Content $p -Raw | ConvertFrom-Json; $j | Add-Member -NotePropertyName 'remote_asr_url' -NotePropertyValue 'wss://%HOST%/asr/stream' -Force; $j | Add-Member -NotePropertyName 'translate_url' -NotePropertyValue 'https://%HOST%/v1/chat/completions' -Force; $j | ConvertTo-Json -Depth 10 | Set-Content $p -Encoding UTF8"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p='profiles\profile.ja.json'; $j=Get-Content $p -Raw | ConvertFrom-Json; $j | Add-Member -NotePropertyName 'remote_asr_url' -NotePropertyValue 'wss://%HOST%/asr/stream' -Force; $j | Add-Member -NotePropertyName 'translate_url' -NotePropertyValue 'https://%HOST%/v1/chat/completions' -Force; $j | ConvertTo-Json -Depth 10 | Set-Content $p -Encoding UTF8"
 
-echo [OK] profile updated. Starting crisp-caption...
+echo.
+echo [OK] profile updated. Connected to %HOST%
+echo Starting crisp-caption...
 call scripts\run-windows.bat
