@@ -132,6 +132,16 @@
         `<option value="${esc(p.name)}" title="${esc(p.description || p.name)}"${p.name === cur ? ' selected' : ''}>${esc(p.label || p.name)}</option>`
       ).join('');
     if (cur) sel.value = cur;
+    // keep the Connect modal's profile dropdown in sync
+    const conn = $('conn-profile');
+    if (conn) {
+      const prev = conn.value;
+      conn.innerHTML = state.profiles.map((p) =>
+        `<option value="${esc(p.name)}">${esc(p.label || p.name)}</option>`
+      ).join('');
+      if (state.profiles.some((p) => p.name === prev)) conn.value = prev;
+      else if (conn.options.length) conn.value = conn.options[0].value;
+    }
   }
   function paint() {
     renderStatus();
@@ -382,6 +392,83 @@
     URL.revokeObjectURL(url);
   }
 
+  // ---- Connection modal ----
+  const connModal = $('connect-modal');
+  const connProfile = $('conn-profile');
+  function fillConnProfile() {
+    connProfile.innerHTML = '';
+    (state.profiles || []).forEach((p) => {
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      opt.textContent = p.label || p.name;
+      connProfile.appendChild(opt);
+    });
+    if (connProfile.options.length && ![...connProfile.options].some((o) => o.value === connProfile.value)) {
+      connProfile.value = connProfile.options[0].value;
+    }
+  }
+  function setFieldDisabled(sel, disabled) {
+    const label = document.querySelector(sel);
+    if (!label) return;
+    const input = label.querySelector('input');
+    label.classList.toggle('conn-disabled', disabled);
+    if (input) input.disabled = disabled;
+  }
+  function syncConnFields() {
+    const asrRemote = $('conn-asr-mode').value === 'remote';
+    setFieldDisabled('.conn-asr-remote', !asrRemote);
+    const transRemote = $('conn-trans-mode').value !== 'local';
+    setFieldDisabled('.conn-trans-remote', !transRemote);
+  }
+  function openConnModal() {
+    fillConnProfile();
+    syncConnFields();
+    connModal.hidden = false;
+  }
+  function closeConnModal() {
+    connModal.hidden = true;
+  }
+  async function applyConnection() {
+    const name = connProfile.value;
+    if (!name) { log('Connect: no profile selected'); return; }
+    const asrMode = $('conn-asr-mode').value;
+    const transMode = $('conn-trans-mode').value;
+    const asrSource = asrMode === 'remote'
+      ? { mode: 'remote', url: $('conn-asr-url').value.trim(), key: $('conn-asr-key').value.trim() }
+      : { mode: 'local' };
+    const translateSource = transMode === 'local'
+      ? { mode: 'local' }
+      : { mode: 'remote', url: $('conn-trans-url').value.trim(), key: $('conn-trans-key').value.trim() };
+    closeConnModal();
+    state.profileBusy = true;
+    stopCapture();
+    paint();
+    try {
+      const res = await fetch('/profiles/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, asr_source: asrSource, translate_source: translateSource }),
+      });
+      if (!res.ok) {
+        let detail = `POST /profiles/select failed ${res.status}`;
+        try { const d = await res.json(); if (d.error) detail += `: ${d.error}`; } catch (_) {}
+        throw new Error(detail);
+      }
+      const data = await res.json();
+      state.profile = name;
+      localStorage.setItem(LAST_PROFILE_KEY, name);
+      log(`Connection applied: ${name} (ASR=${asrMode}, translate=${transMode})`);
+      renderProfiles();
+    } catch (e) {
+      log(`Connect error: ${e.message || e}`);
+      await loadProfiles();
+    } finally {
+      state.profileBusy = false;
+      paint();
+    }
+  }
+
+  // ---- Event bindings ----
   $('btn-tab').onclick = startTab;
   $('btn-mic').onclick = startMic;
   $('btn-stop').onclick = stopCapture;
@@ -389,6 +476,14 @@
   $('btn-overlay').onclick = startOverlay;
   $('btn-overlay-stop').onclick = stopOverlay;
   $('btn-export').onclick = exportVtt;
+  $('btn-connect').onclick = openConnModal;
+  $('btn-conn-apply').onclick = applyConnection;
+  $('btn-conn-cancel').onclick = closeConnModal;
+  connModal.addEventListener('click', (e) => {
+    if (e.target === connModal) closeConnModal();
+  });
+  $('conn-asr-mode').onchange = syncConnFields;
+  $('conn-trans-mode').onchange = syncConnFields;
   $('btn-diag').onclick = () => window.open('/diagnostics', '_blank');
   $('btn-settings').onclick = () => $('settings').classList.toggle('open');
   document.addEventListener('click', (e) => {

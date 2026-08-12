@@ -62,7 +62,9 @@ def make_app(
     state: BridgeRealtimeState,
     *,
     list_profiles: Callable[[], Awaitable[dict[str, object]]],
-    select_profile: Callable[[str], Awaitable[dict[str, object]]],
+    select_profile: Callable[
+        [str, dict[str, str] | None, dict[str, str] | None], Awaitable[dict[str, object]]
+    ],
 ) -> web.Application:
     pcs: set[RTCPeerConnection] = set()
     offer_lock = asyncio.Lock()
@@ -214,8 +216,14 @@ def make_app(
         name = str(data.get("name") or "").strip() if isinstance(data, dict) else ""
         if not name:
             return web.json_response({"error": "Missing profile name."}, status=400)
+        asr_source = data.get("asr_source") if isinstance(data, dict) and isinstance(data.get("asr_source"), dict) else None
+        translate_source = (
+            data.get("translate_source")
+            if isinstance(data, dict) and isinstance(data.get("translate_source"), dict)
+            else None
+        )
         try:
-            result = await select_profile(name)
+            result = await select_profile(name, asr_source, translate_source)
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=404)
         except Exception as exc:  # noqa: BLE001

@@ -5,6 +5,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import secrets
 import shutil
 import signal
@@ -22,7 +23,6 @@ from aiohttp import WSMsgType, web
 
 
 ROOT = Path.cwd()
-DEFAULT_TOKEN = os.environ.get("CRISPASR_REMOTE_KEY") or secrets.token_urlsafe(32)
 LLAMA_PORT = 8081
 PROXY_PORT = 7860
 
@@ -357,11 +357,11 @@ async def wait_health(url: str, timeout_sec: float = 180) -> bool:
     return False
 
 
-def make_app(token: str, crispasr: Path, llama_base: str) -> web.Application:
+def make_app(asr_key: str, translate_key: str, crispasr: Path, llama_base: str) -> web.Application:
     app = web.Application()
 
     async def health(req: web.Request) -> web.Response:
-        auth = require_auth(req, token)
+        auth = require_auth(req, asr_key)
         if auth is not None:
             return auth
         async with aiohttp.ClientSession() as session:
@@ -373,7 +373,7 @@ def make_app(token: str, crispasr: Path, llama_base: str) -> web.Application:
         return web.json_response({"asr": "ready", "llama": "online" if llama_online else "offline"})
 
     async def proxy_chat(req: web.Request) -> web.StreamResponse:
-        auth = require_auth(req, token)
+        auth = require_auth(req, translate_key)
         if auth is not None:
             return auth
         body = await req.read()
@@ -389,7 +389,7 @@ def make_app(token: str, crispasr: Path, llama_base: str) -> web.Application:
                 return web.Response(status=resp.status, body=out, content_type=resp.content_type)
 
     async def asr_stream(req: web.Request) -> web.WebSocketResponse:
-        auth = require_auth(req, token)
+        auth = require_auth(req, asr_key)
         if auth is not None:
             raise web.HTTPUnauthorized(text='{"error":"unauthorized"}', content_type="application/json")
         ws = web.WebSocketResponse(heartbeat=20, max_msg_size=4 * 1024 * 1024)
@@ -464,56 +464,40 @@ def make_app(token: str, crispasr: Path, llama_base: str) -> web.Application:
     return app
 
 
-def _print_value_box(title: str, value: str) -> None:
-    """Print one value so it is clearly visible in a Colab/Kaggle console.
+def display_connection_block(
+    *,
+    asr_url: str,
+    translate_url: str,
+    asr_key: str,
+    translate_key: str,
+) -> None:
+    """Print the full set of connection values the Windows side needs.
 
-    ``run_colab_remote.py`` runs as a ``!python`` subprocess, where
-    ``IPython.display.display()`` only prints ``<IPython.core.display.HTML
-    object>`` and does not render. So instead of relying on a notebook display
-    hook or a clipboard button, we print an obvious box with separation lines
-    that is guaranteed to be visible and easy to copy.
+    Two URLs and two separate keys (ASR + translation). The beginner copies each
+    line into the Web UI on Windows.
     """
     bar = "=" * 60
+    lines = [
+        f"ASR URL: {asr_url}",
+        f"ASR KEY (CRISPASR_REMOTE_KEY): {asr_key}",
+        f"翻譯 URL: {translate_url}",
+        f"翻譯 KEY (OPENAI_API_KEY): {translate_key}",
+    ]
     print("", flush=True)
     print(bar, flush=True)
-    print(f"  {title}", flush=True)
+    print("  在 Windows 控制面板填入下面 4 個值（WebUI 連線設定）", flush=True)
     print(bar, flush=True)
-    print(f"  {value}", flush=True)
+    for line in lines:
+        print(f"  {line}", flush=True)
     print(bar, flush=True)
-    print("  請全選這一行 → Ctrl+C 複製", flush=True)
-    print("", flush=True)
-
-
-def display_copy_box(title: str, value: str) -> None:
-    """Show a token/URL value prominently via print()."""
-    _print_value_box(title, value)
-
-
-def display_connection_block(token: str, url: str) -> None:
-    """Print the token and URL as two clearly separated steps.
-
-    On Windows ``colab-token.bat`` asks for the values in two prompts (Step 1 =
-    token, Step 2 = URL), so this prints them with matching step labels to make
-    it obvious which value goes where.
-    """
-    bar = "=" * 60
-    print("", flush=True)
-    print(bar, flush=True)
-    print("  在 Windows 執行 colab-token.bat，然後分別複製下面兩個值貼上", flush=True)
-    print(bar, flush=True)
-    print("  Step 1 - TOKEN（貼到 colab-token.bat 的 Step 1 提示）", flush=True)
-    print(f"  CRISPASR_REMOTE_KEY={token}", flush=True)
-    print(bar, flush=True)
-    print("  Step 2 - URL（貼到 colab-token.bat 的 Step 2 提示）", flush=True)
-    print(f"  TUNNEL={url}", flush=True)
-    print(bar, flush=True)
-    print("  請全選每一行 → Ctrl+C 複製", flush=True)
+    print("  請逐行全選 → Ctrl+C 複製", flush=True)
     print("", flush=True)
 
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Colab remote CrispASR + llama.cpp proxy for crisp-caption.")
-    parser.add_argument("--token", default=DEFAULT_TOKEN)
+    parser.add_argument("--asr-key", default=os.environ.get("CRISPASR_REMOTE_KEY") or secrets.token_urlsafe(32))
+    parser.add_argument("--translate-key", default=os.environ.get("OPENAI_API_KEY") or secrets.token_urlsafe(32))
     parser.add_argument("--skip-models", action="store_true")
     parser.add_argument(
         "--llama-backend",
@@ -568,7 +552,7 @@ async def main() -> None:
     if not await wait_health(f"http://127.0.0.1:{LLAMA_PORT}/health"):
         raise SystemExit("llama-server did not become healthy")
 
-    app = make_app(ns.token, crispasr, f"http://127.0.0.1:{LLAMA_PORT}")
+    app = make_app(ns.asr_key, ns.translate_key, crispasr, f"http://127.0.0.1:{LLAMA_PORT}")
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "127.0.0.1", PROXY_PORT).start()
@@ -581,11 +565,6 @@ async def main() -> None:
         stderr=asyncio.subprocess.STDOUT,
     )
 
-    print(f"CRISPASR_REMOTE_KEY={ns.token}", flush=True)
-    print("Copy the trycloudflare.com URL printed below into the local profile:", flush=True)
-    print("  remote_asr_url = wss://<host>/asr/stream", flush=True)
-    print("  translate_url = https://<host>/v1/chat/completions", flush=True)
-    display_copy_box("CRISPASR_REMOTE_KEY", ns.token)
     shown_url = False
     try:
         assert tunnel.stdout
@@ -594,10 +573,18 @@ async def main() -> None:
             if line:
                 text = line.decode("utf-8", errors="replace").rstrip()
                 print(text, flush=True)
-                if not shown_url and "trycloudflare.com" in text:
-                    shown_url = True
-                    display_copy_box("Cloudflare 地址", text)
-                    display_connection_block(ns.token, text)
+                if not shown_url:
+                    # Authentic tunnel URL line, e.g.:
+                    #   https://practices-fan-single-inflation.trycloudflare.com
+                    m = re.search(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", line.decode("utf-8", errors="replace"))
+                    if m:
+                        shown_url = True
+                        display_connection_block(
+                            asr_url=f"wss://{m.group(0).split('//',1)[1]}/asr/stream",
+                            translate_url=f"{m.group(0).rstrip('/')}/v1/chat/completions",
+                            asr_key=ns.asr_key,
+                            translate_key=ns.translate_key,
+                        )
             elif tunnel.returncode is not None:
                 raise SystemExit(tunnel.returncode)
             else:

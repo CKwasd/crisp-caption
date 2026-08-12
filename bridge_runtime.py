@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 
 import aiohttp
@@ -205,6 +206,47 @@ def config_from_profile(path: Path) -> BridgeRunConfig:
     return cfg
 
 
+def apply_source_overrides(
+    cfg: BridgeRunConfig,
+    asr_source: dict[str, str] | None,
+    translate_source: dict[str, str] | None,
+) -> None:
+    """Temporarily override ASR/translation source without touching the profile file.
+
+    ``asr_source`` / ``translate_source`` are dicts like::
+
+        {"mode": "local"}
+        {"mode": "remote", "url": "wss://...", "key": "..."}
+
+    Only the current in-memory config is changed; keys are set in ``os.environ``
+    for the lifetime of the process so subsequent starts reuse them.
+    """
+    if asr_source:
+        mode = str(asr_source.get("mode") or "local")
+        if mode == "remote":
+            cfg.asr_mode = "remote"
+            url = str(asr_source.get("url") or "").strip()
+            key = str(asr_source.get("key") or "").strip()
+            if url:
+                cfg.remote_asr_url = url
+            if key:
+                cfg.remote_asr_bearer = key
+                os.environ["CRISPASR_REMOTE_KEY"] = key
+        else:
+            cfg.asr_mode = "local"
+    if translate_source:
+        mode = str(translate_source.get("mode") or "local")
+        url = str(translate_source.get("url") or "").strip()
+        key = str(translate_source.get("key") or "").strip()
+        if mode == "remote":
+            if url:
+                cfg.translate_url = url
+                cfg.translate_enabled = True
+            if key:
+                cfg.translate_bearer = key
+                os.environ["OPENAI_API_KEY"] = key
+
+
 async def async_main(cfg: BridgeRunConfig, host: str, port: int) -> None:
     pcm_queue: asyncio.Queue[bytes] = asyncio.Queue()
     bridge_state = BridgeRealtimeState(transcript_queue=asyncio.Queue())
@@ -218,9 +260,14 @@ async def async_main(cfg: BridgeRunConfig, host: str, port: int) -> None:
             "crisp_status": bridge_state.crisp_status,
         }
 
-    async def select_profile(name: str) -> dict[str, object]:
+    async def select_profile(
+        name: str,
+        asr_source: dict[str, str] | None = None,
+        translate_source: dict[str, str] | None = None,
+    ) -> dict[str, object]:
         path = resolve_profile_path(profiles_dir, name)
         cfg = config_from_profile(path)
+        apply_source_overrides(cfg, asr_source, translate_source)
 
         async def _start() -> None:
             try:

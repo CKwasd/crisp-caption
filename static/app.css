@@ -110,3 +110,20 @@ button.danger { border-color: var(--red); }
   .app { grid-template-columns: 1fr; }
   .sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
 }
+
+/* Connection settings modal */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.55);
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+}
+.modal {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+  width: min(480px, 92vw); max-height: 90vh; overflow: auto; box-shadow: 0 8px 30px rgba(0,0,0,.4);
+}
+.modal-title { font-size: 15px; font-weight: 700; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.modal-body { padding: 14px 16px 16px; }
+.modal-group { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.modal-group-title { font-size: 12px; font-weight: 700; color: var(--green); margin-bottom: 8px; text-transform: uppercase; letter-spacing: .04em; }
+.modal-actions { margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; }
+.modal-actions button { margin: 0; }
+.conn-disabled { opacity: .5; pointer-events: none; }

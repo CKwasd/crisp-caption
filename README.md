@@ -134,33 +134,21 @@ CRISPASR_REMOTE_KEY=...
 https://<host>.trycloudflare.com
 ```
 
-On Windows, copy `profiles\profile.ja.colab.example.json` to `profiles\profile.ja.json`, then set:
-
-```json
-"remote_asr_url": "wss://<host>.trycloudflare.com/asr/stream",
-"translate_url": "https://<host>.trycloudflare.com/v1/chat/completions"
-```
-
-Set the token in the same terminal before starting the bridge, or use the helper script:
-
-```bat
-scripts\colab-token.bat
-```
-
-The helper prompts for the token and the Cloudflare Tunnel URL, patches `profiles\profile.ja.json` with both, sets `CRISPASR_REMOTE_KEY` and `OPENAI_API_KEY`, then launches the bridge.
-
-> Note: Kaggle support assumes the Kaggle notebook environment can establish an outbound Cloudflare Tunnel like Colab does. Verify this on the first run if you use Kaggle.
+On Windows, open `http://127.0.0.1:8765/`, click **Connect**, pick the profile, choose Local or Notebook/Remote under ASR and Translation, and paste the WebSocket URL / translation URL and the two keys printed by Colab. Nothing is saved to the profile file — the values apply for this session only.
 
 Manual equivalent:
 
 ```bat
-set CRISPASR_REMOTE_KEY=<token printed by Colab>
-set OPENAI_API_KEY=<same token>
+set CRISPASR_REMOTE_KEY=<ASR key printed by Colab>
+set OPENAI_API_KEY=<translation key printed by Colab>
 scripts\check-deps.bat
 scripts\run-windows.bat
 ```
 
-`OPENAI_API_KEY` is used as the Bearer token for the remote llama.cpp proxy. Cloudflare Tunnel URLs are ephemeral, so update the profile whenever the Colab runtime restarts.
+`OPENAI_API_KEY` is used as the Bearer token for the remote llama.cpp proxy. Cloudflare Tunnel URLs are ephemeral, so re-enter them whenever the Colab runtime restarts.
+
+> Note: Kaggle support assumes the Kaggle notebook environment can establish an outbound Cloudflare Tunnel like Colab does. Verify this on the first run if you use Kaggle.
+
 
 ## Models
 

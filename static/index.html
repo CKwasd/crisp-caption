@@ -61,6 +61,7 @@
         <button type="button" id="btn-overlay">Overlay</button>
         <button type="button" id="btn-overlay-stop" disabled>Stop Overlay</button>
         <button type="button" id="btn-export">Export</button>
+        <button type="button" id="btn-connect" title="Connection settings">Connect</button>
         <button type="button" id="btn-diag">Diagnostics</button>
         <div class="settings-wrap">
           <button type="button" class="icon-button" id="btn-settings" title="Settings">⚙</button>
@@ -88,6 +89,53 @@
     </header>
     <section class="transcript" id="transcript"><div class="empty">Waiting for transcript events.</div></section>
   </main>
+</div>
+
+<!-- 連線設定 modal -->
+<div class="modal-overlay" id="connect-modal" hidden>
+  <div class="modal">
+    <div class="modal-title">Connection settings</div>
+    <div class="modal-body">
+      <label class="field-row"><span>Profile</span>
+        <select id="conn-profile"></select>
+      </label>
+      <div class="modal-group">
+        <div class="modal-group-title">ASR (CrispASR)</div>
+        <label class="field-row"><span>Source</span>
+          <select id="conn-asr-mode">
+            <option value="local">Local</option>
+            <option value="remote">Notebook / Remote</option>
+          </select>
+        </label>
+        <label class="field-row conn-asr-remote"><span>WebSocket URL</span>
+          <input type="text" id="conn-asr-url" placeholder="wss://.../asr/stream">
+        </label>
+        <label class="field-row conn-asr-remote"><span>ASR Key</span>
+          <input type="password" id="conn-asr-key" placeholder="CRISPASR_REMOTE_KEY">
+        </label>
+      </div>
+      <div class="modal-group">
+        <div class="modal-group-title">Translation</div>
+        <label class="field-row"><span>Source</span>
+          <select id="conn-trans-mode">
+            <option value="local">Local</option>
+            <option value="remote">Notebook / Remote</option>
+            <option value="api">Own API</option>
+          </select>
+        </label>
+        <label class="field-row conn-trans-remote"><span>URL</span>
+          <input type="text" id="conn-trans-url" placeholder="https://.../v1/chat/completions">
+        </label>
+        <label class="field-row conn-trans-remote"><span>Key</span>
+          <input type="password" id="conn-trans-key" placeholder="OPENAI_API_KEY">
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="btn-conn-apply" class="primary">Apply & start</button>
+        <button type="button" id="btn-conn-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
 </div>
 </body>
 <script src="/static/app.js?v=3"></script>

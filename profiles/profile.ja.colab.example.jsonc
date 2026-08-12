@@ -17,7 +17,7 @@
   "asr_mode": "remote",
 
   // 遠端 ASR 的 WebSocket 位址（Colab 的 /asr/stream）
-  // 由 colab-token.bat 或手動貼上 tunnel URL 填入
+  // 由控制面板 WebUI 的 Connect 設定填入（或手動貼上 tunnel URL）
   "remote_asr_url": "wss://YOUR-COLAB-TUNNEL.trycloudflare.com/asr/stream",
 
   // 連上面的位址時，從哪個環境變數讀 token
