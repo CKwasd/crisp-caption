@@ -117,22 +117,17 @@ scripts\start-translation-server-windows.bat
 
 Low-VRAM mode uses smaller llama.cpp context/batch settings (`-c 4096 -b 512 -ub 256`). It may be slower or have less translation context.
 
-## Colab Remote Compute
+## Colab / Kaggle Remote Compute
 
-Remote mode keeps the browser UI, WebRTC capture, OBS overlay, and transparent overlay on Windows, but sends 16 kHz mono PCM to a Colab-hosted CrispASR service and sends final subtitles to a Colab-hosted llama.cpp server.
+Remote mode keeps the browser UI, WebRTC capture, OBS overlay, and transparent overlay on Windows, but sends 16 kHz mono PCM to a Colab- or Kaggle-hosted CrispASR service and sends final subtitles to a Colab- or Kaggle-hosted llama.cpp server.
 
-1. In Colab, open or upload `scripts/colab/crisp_caption_colab_remote.ipynb`.
-2. Upload `scripts/colab/run_colab_remote.py` when the notebook asks for it.
-3. The helper automatically downloads cloudflared, model files, a Linux CrispASR release, and a prebuilt llama.cpp release when possible. Set `LLAMA_BACKEND=auto`, `ai-dock-cuda`, `vulkan`, `official-cpu`, or `build-cuda` to choose the translation runtime. If auto-detection fails, set `CRISPASR_URL`, `CRISPASR_EXE`, `LLAMA_CPP_URL`, or `LLAMA_SERVER`.
-4. Run the final notebook cell, or run the helper script directly:
+1. In Colab or Kaggle, open `scripts/colab/crisp_caption_colab_remote.ipynb`. The notebook auto-detects the platform and `git clone`s this repo for you — no file upload needed.
+2. Run the notebook cells in order. The notebook clones the project, downloads cloudflared, model files, a Linux CrispASR release, and a prebuilt llama.cpp release when possible. Set `LLAMA_BACKEND=auto`, `ai-dock-cuda`, `vulkan`, `official-cpu`, or `build-cuda` to choose the translation runtime. If auto-detection fails, set `CRISPASR_URL`, `CRISPASR_EXE`, `LLAMA_CPP_URL`, or `LLAMA_SERVER`.
+3. Run the final notebook cell. It starts llama.cpp, starts the ASR/translation proxy, starts Cloudflare Tunnel, and shows the token and tunnel URL as large, click-to-select boxes so you can copy them easily without a Copy button.
 
-```bash
-python run_colab_remote.py
-```
+The helper no longer builds llama.cpp by default. Use `python scripts/colab/run_colab_remote.py --build-llama` only when you intentionally want a source-build fallback.
 
-The helper no longer builds llama.cpp by default. Use `python run_colab_remote.py --build-llama` only when you intentionally want a source-build fallback.
-
-The script starts llama.cpp, starts the ASR/translation proxy on Colab, starts Cloudflare Tunnel, and prints:
+The script prints the values you need to connect your Windows side:
 
 ```text
 CRISPASR_REMOTE_TOKEN=...
@@ -153,6 +148,8 @@ scripts\colab-token.bat
 ```
 
 The helper prompts for the token and the Cloudflare Tunnel URL, patches `profiles\profile.ja.json` with both, sets `CRISPASR_REMOTE_TOKEN` and `OPENAI_API_KEY`, then launches the bridge.
+
+> Note: Kaggle support assumes the Kaggle notebook environment can establish an outbound Cloudflare Tunnel like Colab does. Verify this on the first run if you use Kaggle.
 
 Manual equivalent:
 

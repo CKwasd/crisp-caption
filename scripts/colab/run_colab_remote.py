@@ -464,6 +464,33 @@ def make_app(token: str, crispasr: Path, llama_base: str) -> web.Application:
     return app
 
 
+def display_copy_box(title: str, value: str) -> None:
+    """Show a large, click-to-select text box in Colab/Kaggle.
+
+    Colab and Kaggle notebooks do not reliably support a clipboard Copy button,
+    so instead of depending on ``navigator.clipboard`` we render the value as a
+    big pre block with ``user-select: all`` and ``onclick=this.select()``. The
+    beginner clicks the box once, the whole value is selected, then Ctrl+C.
+    """
+    import html as _html
+
+    try:
+        from IPython.display import HTML, display
+
+        escaped = _html.escape(value)
+        display(
+            HTML(
+                "<div style='font-size:14px;margin-top:8px;font-weight:600;'>"
+                f"{_html.escape(title)}（點一下全選 → 按 Ctrl+C 複製）</div>"
+                "<pre style='font-size:18px;padding:14px 16px;background:#f4f4f4;"
+                "border:1px solid #ccc;border-radius:8px;user-select:all;cursor:text;"
+                f"white-space:pre-wrap;word-break:break-all;' onclick='this.select()'>{escaped}</pre>"
+            )
+        )
+    except Exception:  # pragma: no cover - non-notebook fallback
+        print(f"{title}: {value}", flush=True)
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Colab remote CrispASR + llama.cpp proxy for crisp-caption.")
     parser.add_argument("--token", default=DEFAULT_TOKEN)
@@ -538,12 +565,18 @@ async def main() -> None:
     print("Copy the trycloudflare.com URL printed below into the local profile:", flush=True)
     print("  remote_asr_url = wss://<host>/asr/stream", flush=True)
     print("  translate_url = https://<host>/v1/chat/completions", flush=True)
+    display_copy_box("CRISPASR_REMOTE_TOKEN", ns.token)
+    shown_url = False
     try:
         assert tunnel.stdout
         while True:
             line = await tunnel.stdout.readline()
             if line:
-                print(line.decode("utf-8", errors="replace").rstrip(), flush=True)
+                text = line.decode("utf-8", errors="replace").rstrip()
+                print(text, flush=True)
+                if not shown_url and "trycloudflare.com" in text:
+                    shown_url = True
+                    display_copy_box("Cloudflare 地址", text)
             elif tunnel.returncode is not None:
                 raise SystemExit(tunnel.returncode)
             else:
