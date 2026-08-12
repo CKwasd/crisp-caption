@@ -32,13 +32,26 @@ def run(cmd: list[str], *, cwd: Path | None = None) -> None:
     subprocess.check_call(cmd, cwd=str(cwd) if cwd else None)
 
 
-def download(url: str, target: Path) -> None:
+def download(url: str, target: Path, retries: int = 3) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists():
+    if target.exists() and target.stat().st_size > 0:
         print(f"[skip] {target}", flush=True)
         return
-    print(f"[download] {url}", flush=True)
-    urllib.request.urlretrieve(url, target)
+    for attempt in range(1, retries + 1):
+        print(f"[download] {url} (try {attempt}/{retries})", flush=True)
+        try:
+            urllib.request.urlretrieve(url, target)
+            return
+        except Exception as exc:  # noqa: BLE001
+            if attempt == retries:
+                raise
+            print(f"[warn] download failed (attempt {attempt}/{retries}): {exc}", flush=True)
+            if target.exists():
+                try:
+                    target.unlink()
+                except Exception:  # noqa: BLE001
+                    pass
+            time.sleep(3 * attempt)
 
 
 def ensure_models() -> None:
