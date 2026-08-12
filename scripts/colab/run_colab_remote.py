@@ -22,7 +22,7 @@ from aiohttp import WSMsgType, web
 
 
 ROOT = Path.cwd()
-DEFAULT_TOKEN = os.environ.get("CRISPASR_REMOTE_TOKEN") or secrets.token_urlsafe(32)
+DEFAULT_TOKEN = os.environ.get("CRISPASR_REMOTE_KEY") or secrets.token_urlsafe(32)
 LLAMA_PORT = 8081
 PROXY_PORT = 7860
 
@@ -502,7 +502,7 @@ def display_connection_block(token: str, url: str) -> None:
     print("  在 Windows 執行 colab-token.bat，然後分別複製下面兩個值貼上", flush=True)
     print(bar, flush=True)
     print("  Step 1 - TOKEN（貼到 colab-token.bat 的 Step 1 提示）", flush=True)
-    print(f"  CRISPASR_REMOTE_TOKEN={token}", flush=True)
+    print(f"  CRISPASR_REMOTE_KEY={token}", flush=True)
     print(bar, flush=True)
     print("  Step 2 - URL（貼到 colab-token.bat 的 Step 2 提示）", flush=True)
     print(f"  TUNNEL={url}", flush=True)
@@ -581,11 +581,11 @@ async def main() -> None:
         stderr=asyncio.subprocess.STDOUT,
     )
 
-    print(f"CRISPASR_REMOTE_TOKEN={ns.token}", flush=True)
+    print(f"CRISPASR_REMOTE_KEY={ns.token}", flush=True)
     print("Copy the trycloudflare.com URL printed below into the local profile:", flush=True)
     print("  remote_asr_url = wss://<host>/asr/stream", flush=True)
     print("  translate_url = https://<host>/v1/chat/completions", flush=True)
-    display_copy_box("CRISPASR_REMOTE_TOKEN", ns.token)
+    display_copy_box("CRISPASR_REMOTE_KEY", ns.token)
     shown_url = False
     try:
         assert tunnel.stdout

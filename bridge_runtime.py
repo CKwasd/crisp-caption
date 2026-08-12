@@ -159,8 +159,8 @@ class CrispRuntime:
 
 def discover_profiles(profiles_dir: Path) -> list[dict[str, object]]:
     profiles: list[dict[str, object]] = []
-    local_profile_names = {path.name for path in profiles_dir.glob("*.json") if ".example." not in path.name}
-    for path in sorted(profiles_dir.glob("*.json")):
+    local_profile_names = {path.name for path in profiles_dir.glob("*.jsonc") if ".example." not in path.name}
+    for path in sorted(profiles_dir.glob("*.jsonc")):
         if ".example." in path.name:
             local_name = path.name.replace(".example.", ".")
             if local_name in local_profile_names:
@@ -188,7 +188,7 @@ def resolve_profile_path(profiles_dir: Path, name: str) -> Path:
     else:
         path = profiles_dir / candidate.name
     path = path.resolve()
-    if path.parent != profiles_dir.resolve() or path.suffix.lower() != ".json" or not path.is_file():
+    if path.parent != profiles_dir.resolve() or path.suffix.lower() != ".jsonc" or not path.is_file():
         raise ValueError(f"Unknown profile: {name}")
     return path
 

@@ -5,7 +5,6 @@ import json
 import os
 import shutil
 import socket
-import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -15,7 +14,52 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROFILE = ROOT / "profiles" / "profile.ja.json"
+PROFILE = ROOT / "profiles" / "profile.ja.jsonc"
+
+
+def _strip_jsonc(text: str) -> str:
+    """Remove JSONC ``//`` and ``/* */`` comments without touching strings.
+
+    Kept inline here (rather than importing bridge_config) so this standalone
+    check script has no import-path dependency. See bridge_config.strip_jsonc.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    in_string = False
+    string_quote = ""
+    while i < n:
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < n else ""
+        if in_string:
+            out.append(ch)
+            if ch == "\\" and i + 1 < n:
+                out.append(nxt)
+                i += 2
+                continue
+            if ch == string_quote:
+                in_string = False
+            i += 1
+            continue
+        if ch == '"' or ch == "'":
+            in_string = True
+            string_quote = ch
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "/" and nxt == "/":
+            while i < n and text[i] != "\n":
+                i += 1
+            continue
+        if ch == "/" and nxt == "*":
+            i += 2
+            while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"):
+                i += 1
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
 
 
 FAILED = 0
@@ -45,14 +89,14 @@ def import_exists(name: str) -> bool:
 
 def load_profile() -> dict[str, Any] | None:
     if not PROFILE.is_file():
-        fail("profiles/profile.ja.json not found", "Run scripts\\setup-windows.bat")
+        fail("profiles/profile.ja.jsonc not found", "Run scripts\\setup-windows.bat")
         return None
     try:
-        data = json.loads(PROFILE.read_text(encoding="utf-8"))
+        data = json.loads(_strip_jsonc(PROFILE.read_text(encoding="utf-8")))
     except Exception as exc:
-        fail(f"profiles/profile.ja.json is invalid JSON: {exc}")
+        fail(f"profiles/profile.ja.jsonc is invalid JSON: {exc}")
         return None
-    ok("profiles/profile.ja.json exists")
+    ok("profiles/profile.ja.jsonc exists")
     return data if isinstance(data, dict) else None
 
 
@@ -130,7 +174,7 @@ def check_profile(profile: dict[str, Any]) -> None:
 
     if asr_mode == "remote":
         remote_asr_url = str(profile.get("remote_asr_url") or "").strip()
-        bearer_env = str(profile.get("remote_asr_bearer_env") or "CRISPASR_REMOTE_TOKEN").strip()
+        bearer_env = str(profile.get("remote_asr_bearer_env") or "CRISPASR_REMOTE_KEY").strip()
         bearer = os.environ.get(bearer_env) if bearer_env else None
         if remote_asr_url.startswith(("wss://", "ws://")):
             ok(f"Remote ASR URL configured: {remote_asr_url}")
@@ -155,7 +199,7 @@ def check_profile(profile: dict[str, Any]) -> None:
                 ok(f"CrispASR found on PATH: {found}")
                 crisp_path = None
             else:
-                fail(f"CrispASR executable not found on PATH: {crisp}", "Run scripts\\download-crispasr-windows.bat or edit profiles\\profile.ja.json")
+                fail(f"CrispASR executable not found on PATH: {crisp}", "Run scripts\\download-crispasr-windows.bat or edit profiles\\profile.ja.jsonc")
                 crisp_path = None
         else:
             fail("profile crispasr is empty", "Set crispasr to tools/crispasr/crispasr.exe")
@@ -180,7 +224,7 @@ def check_profile(profile: dict[str, Any]) -> None:
             ok(f"Remote translation URL configured: {translate_url}")
         check_translation_health(translate_url)
     else:
-        warn("Translation is disabled in profile", 'Set "translate_model": "Hy-MT2-1.8B" in profiles\\profile.ja.json')
+        warn("Translation is disabled in profile", 'Set "translate_model": "Hy-MT2-1.8B" in profiles\\profile.ja.jsonc')
 
 
 def check_port(port: int) -> None:

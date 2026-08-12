@@ -170,13 +170,13 @@ class RemoteCrispAsrBackend:
         enqueue_for_translate: bool,
         print_raw_crisp_events: bool,
         debug_timestamps: bool,
-        bearer_env: str = "CRISPASR_REMOTE_TOKEN",
+        bearer_env: str = "CRISPASR_REMOTE_KEY",
     ) -> None:
         self.state = state
         self.pcm_queue = pcm_queue
         self.remote_asr_url = remote_asr_url
         self.bearer = bearer
-        self.bearer_env = bearer_env or "CRISPASR_REMOTE_TOKEN"
+        self.bearer_env = bearer_env or "CRISPASR_REMOTE_KEY"
         self.crisp_args = crisp_args
         self.profile_name = profile_name
         self.enqueue_for_translate = enqueue_for_translate

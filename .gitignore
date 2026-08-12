@@ -38,11 +38,11 @@ pnpm-debug.log*
 !demo/*.png
 
 # Local profiles and prompts
-profile-*.json
-profile.*.json
-profiles/*.json
-!profile.*.example.json
-!profiles/*.example.json
+profile-*.jsonc
+profile.*.jsonc
+profiles/*.jsonc
+!profile.*.example.jsonc
+!profiles/*.example.jsonc
 !glossary.example.json
 !translate_prompt.example.txt
 

@@ -55,7 +55,7 @@ Remote ASR profiles are the exception: paths are passed through unchanged so the
 |---|---|---|
 | `asr_mode` | `local` | `local` starts a Windows CrispASR subprocess. `remote` connects to a WebSocket ASR service such as Colab. |
 | `remote_asr_url` | empty | WSS endpoint used only when `asr_mode` is `remote`, for example `wss://<host>.trycloudflare.com/asr/stream`. |
-| `remote_asr_bearer_env` | `CRISPASR_REMOTE_TOKEN` | Environment variable containing the Bearer token for the remote ASR WebSocket. |
+| `remote_asr_bearer_env` | `CRISPASR_REMOTE_KEY` | Environment variable containing the Bearer token for the remote ASR WebSocket. |
 
 Remote ASR sends an initial JSON config frame containing `crisp_args`, then streams 16 kHz mono s16le PCM binary frames. The remote service returns CrispASR-compatible JSON text events, so local and remote modes produce the same UI events.
 

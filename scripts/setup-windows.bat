@@ -70,9 +70,9 @@ echo Installing overlay dependencies...
 "%PY%" -m pip install -r requirements-overlay.txt
 if errorlevel 1 goto fail
 
-if not exist "profiles\profile.ja.json" (
-  echo Creating local profile profiles\profile.ja.json...
-  copy /Y "profiles\profile.ja.example.json" "profiles\profile.ja.json" >nul
+if not exist "profiles\profile.ja.jsonc" (
+  echo Creating local profile profiles\profile.ja.jsonc...
+  copy /Y "profiles\profile.ja.example.jsonc" "profiles\profile.ja.jsonc" >nul
 )
 
 echo.

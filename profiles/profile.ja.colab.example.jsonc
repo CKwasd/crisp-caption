@@ -1,0 +1,78 @@
+// ============================================================
+// crisp-caption profile — Colab 遠端模式範例
+// 這是 JSONC：// 或 /* ... */ 是註解，載入時自動忽略。
+// ============================================================
+{
+  // --- 基本 ---
+  "name": "Japanese Colab remote example",
+  "description": "Remote ASR/translation via Colab tunnel. Copy to profile.ja.json and paste tunnel URLs.",
+  "tags": ["live", "stable", "ja", "colab", "remote"],
+
+  // bridge 伺服器監聽位置（瀏覽器 UI 連這個）
+  "host": "127.0.0.1",
+  "port": 8765,
+
+  // --- ASR（語音辨識）---
+  // 運算位置：remote = 連到遠端（Colab）跑 ASR
+  "asr_mode": "remote",
+
+  // 遠端 ASR 的 WebSocket 位址（Colab 的 /asr/stream）
+  // 由 colab-token.bat 或手動貼上 tunnel URL 填入
+  "remote_asr_url": "wss://YOUR-COLAB-TUNNEL.trycloudflare.com/asr/stream",
+
+  // 連上面的位址時，從哪個環境變數讀 token
+  "remote_asr_bearer_env": "CRISPASR_REMOTE_KEY",
+
+  // CrispASR 執行檔路徑（遠端模式下本機未直接使用，保留）
+  "crispasr": "tools/crispasr/crispasr.exe",
+
+  // 直接透傳給遠端 CrispASR 的 CLI 參數
+  // 注意：遠端模式路徑不以 ../ 開頭（在 Colab 根目錄解析）
+  "crisp_args": [
+    "--backend", "cohere",
+    "-l", "ja",
+    "-m", "models/asr/cohere-asr-ja-q6_k.gguf",
+    "--stream-json",
+    "--stream-final-mode", "redecode",
+    "--stream-utterance-max-sec", "60",
+    "--stream-final-on-silence-ms", "300",
+    "--stream-vad-merge-gap-ms", "250",
+    "--stream-length", "8000",
+    "--stream-step", "750",
+    "--stream-partial-decode-ms", "1500",
+    "--vad",
+    "-vm", "models/vad/firered-vad.gguf",
+    "-vt", "0.70",
+    "-vspd", "180",
+    "-vsd", "330",
+    "-vmsd", "10",
+    "-vp", "110"
+  ],
+
+  // --- 翻譯 ---
+  // 翻譯模型（對應遠端翻譯伺服器的模型 alias）
+  "translate_model": "Hy-MT2-1.8B",
+
+  // 遠端翻譯端點（Colab 的 /v1/chat/completions）
+  "translate_url": "https://YOUR-COLAB-TUNNEL.trycloudflare.com/v1/chat/completions",
+
+  // 用多少筆最近翻譯當上下文
+  "translate_window": 8,
+
+  // 翻譯抽樣參數
+  "temperature": 0.7,
+  "top_k": 20,
+  "top_p": 0.6,
+  "repeat_penalty": 1.05,
+  "max_tokens": 4096,   // 單次輸出上限
+
+  // 附加檔案（可選）
+  "translate_prompt_file": "",  // 自訂翻譯 prompt（檔名）
+  "glossary_file": "",          // 術語表 JSON（強制特定譯法）
+
+  // --- Overlay（字幕顯示）---
+  "overlay_mode": "both",         // 顯示模式：source | trans | both
+  "overlay_interj_len": 3,        // 多短的尾句算插入語（字元數）
+  "overlay_interj_ratio": 0.4,    // 合併門檻（相對前句長度的比例）
+  "overlay_interj_gap_sec": 2.0   // 跟前一句最大間隔（秒）
+}

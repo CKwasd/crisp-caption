@@ -130,7 +130,7 @@ The helper no longer builds llama.cpp by default. Use `python scripts/colab/run_
 The script prints the values you need to connect your Windows side:
 
 ```text
-CRISPASR_REMOTE_TOKEN=...
+CRISPASR_REMOTE_KEY=...
 https://<host>.trycloudflare.com
 ```
 
@@ -147,14 +147,14 @@ Set the token in the same terminal before starting the bridge, or use the helper
 scripts\colab-token.bat
 ```
 
-The helper prompts for the token and the Cloudflare Tunnel URL, patches `profiles\profile.ja.json` with both, sets `CRISPASR_REMOTE_TOKEN` and `OPENAI_API_KEY`, then launches the bridge.
+The helper prompts for the token and the Cloudflare Tunnel URL, patches `profiles\profile.ja.json` with both, sets `CRISPASR_REMOTE_KEY` and `OPENAI_API_KEY`, then launches the bridge.
 
 > Note: Kaggle support assumes the Kaggle notebook environment can establish an outbound Cloudflare Tunnel like Colab does. Verify this on the first run if you use Kaggle.
 
 Manual equivalent:
 
 ```bat
-set CRISPASR_REMOTE_TOKEN=<token printed by Colab>
+set CRISPASR_REMOTE_KEY=<token printed by Colab>
 set OPENAI_API_KEY=<same token>
 scripts\check-deps.bat
 scripts\run-windows.bat
@@ -274,7 +274,7 @@ Common fixes:
 - Missing llama.cpp: run `scripts\download-llama-cpp-windows.bat`.
 - Missing models: run `scripts\models-download.bat`.
 - Translation server out of memory: use `set LOW_VRAM=1 && scripts\start-translation-server-windows.bat`.
-- Remote Colab 401/unauthorized: set `CRISPASR_REMOTE_TOKEN` for ASR and `OPENAI_API_KEY` for translation.
+- Remote Colab 401/unauthorized: set `CRISPASR_REMOTE_KEY` for ASR and `OPENAI_API_KEY` for translation.
 - Remote Colab connection failure: refresh the Cloudflare Tunnel URLs in `profiles\profile.ja.json`.
 - Browser UI missing: ensure `static\index.html` exists.
 

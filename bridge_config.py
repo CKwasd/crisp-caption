@@ -12,6 +12,75 @@ logger = logging.getLogger(__name__)
 
 ARGPARSE_DESCRIPTION = "WebRTC browser audio bridge for CrispASR streaming ASR and optional translation."
 
+
+def strip_jsonc(text: str) -> str:
+    """Remove JSONC comments (``//`` and ``/* ... */``) but keep string content.
+
+    Profile files are JSONC so they can carry comments for humans. Standard
+    ``json.load`` rejects comments, so we strip them before parsing. We scan
+    character by character so ``//`` inside a string (e.g. ``https://...``)
+    is preserved.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    in_string = False
+    string_quote = ""
+    while i < n:
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < n else ""
+        if in_string:
+            out.append(ch)
+            if ch == "\\" and i + 1 < n:
+                out.append(nxt)
+                i += 2
+                continue
+            if ch == string_quote:
+                in_string = False
+            i += 1
+            continue
+        # Not in a string: handle comments.
+        if ch == '"' or ch == "'":
+            in_string = True
+            string_quote = ch
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "/" and nxt == "/":
+            # line comment
+            while i < n and text[i] != "\n":
+                i += 1
+            continue
+        if ch == "/" and nxt == "*":
+            # block comment
+            i += 2
+            while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"):
+                i += 1
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def load_jsonc_file(path: str) -> dict[str, object]:
+    """Load a JSONC profile file and return its JSON object.
+
+    Raises SystemExit(2) on missing file, and lets json.JSONDecodeError bubble
+    up for callers that want to format the message.
+    """
+    pth = os.path.expanduser(path)
+    if not os.path.isfile(pth):
+        logger.error("Bridge config file not found: %s", pth)
+        raise SystemExit(2)
+    with open(pth, encoding="utf-8") as f:
+        text = f.read()
+    data = json.loads(strip_jsonc(text))
+    if not isinstance(data, dict):
+        logger.error("Bridge config must be a JSON object: %s", path)
+        raise SystemExit(2)
+    return data
+
 DEFAULT_TRANSLATE_URL = os.environ.get(
     "CRISPASR_TRANSLATE_URL",
     "http://127.0.0.1:8080/v1/chat/completions",
@@ -25,7 +94,7 @@ class BridgeRunConfig:
     asr_mode: str = "local"
     remote_asr_url: str = ""
     remote_asr_bearer: str | None = None
-    remote_asr_bearer_env: str = "CRISPASR_REMOTE_TOKEN"
+    remote_asr_bearer_env: str = "CRISPASR_REMOTE_KEY"
     profile_name: str = ""
     crisp_hide_stderr: bool = False
     verbose: bool = False
@@ -108,15 +177,7 @@ def pop_config_arg(argv: list[str]) -> tuple[str | None, list[str]]:
 
 
 def load_bridge_config_file(path: str) -> dict[str, object]:
-    pth = os.path.expanduser(path)
-    if not os.path.isfile(pth):
-        logger.error("Bridge config file not found: %s", pth)
-        raise SystemExit(2)
-    with open(pth, encoding="utf-8") as f:
-        data = json.load(f)
-    if not isinstance(data, dict):
-        logger.error("Bridge config must be a JSON object: %s", path)
-        raise SystemExit(2)
+    data = load_jsonc_file(path)
     bad = set(data) - BRIDGE_CONFIG_KEYS
     if bad:
         logger.warning("Ignoring unknown keys in bridge config: %s", ", ".join(sorted(bad)))
@@ -194,7 +255,7 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     )
     p.add_argument(
         "--remote-asr-bearer-env",
-        default="CRISPASR_REMOTE_TOKEN",
+        default="CRISPASR_REMOTE_KEY",
         help="Environment variable containing the Bearer token for remote ASR.",
     )
     p.add_argument(
@@ -355,10 +416,10 @@ def run_config_from_ns(
         crisp_args=crisp_args,
         asr_mode=ns.asr_mode,
         remote_asr_url=ns.remote_asr_url,
-        remote_asr_bearer_env=(ns.remote_asr_bearer_env or "CRISPASR_REMOTE_TOKEN"),
+        remote_asr_bearer_env=(ns.remote_asr_bearer_env or "CRISPASR_REMOTE_KEY"),
         remote_asr_bearer=remote_asr_bearer
         if remote_asr_bearer is not None
-        else (os.environ.get(ns.remote_asr_bearer_env or "CRISPASR_REMOTE_TOKEN") or None),
+        else (os.environ.get(ns.remote_asr_bearer_env or "CRISPASR_REMOTE_KEY") or None),
         profile_name=profile_name,
         crisp_hide_stderr=ns.crisp_hide_stderr,
         verbose=ns.verbose,
