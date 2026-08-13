@@ -374,9 +374,11 @@ def make_app(asr_key: str, translate_key: str, crispasr: Path, llama_base: str) 
     app = web.Application()
 
     async def health(req: web.Request) -> web.Response:
-        auth = require_auth(req, asr_key)
-        if auth is not None:
-            return auth
+        header = req.headers.get("Authorization", "")
+        # /health is a status endpoint; allow either configured key so both the
+        # ASR path and the translation health monitor can query it.
+        if header not in (f"Bearer {asr_key}", f"Bearer {translate_key}"):
+            return web.json_response({"error": "unauthorized"}, status=401)
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(f"{llama_base}/health", timeout=aiohttp.ClientTimeout(total=2)) as resp:
