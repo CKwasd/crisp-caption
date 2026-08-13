@@ -1,0 +1,56 @@
+// ============================================================
+// crisp-caption profile — 本機模式（Low latency）
+// Lowest-lag streaming：utterance 15s、step 500、partial 1000。
+// 這是 JSONC：// 或 /* ... */ 是註解，載入時自動忽略。
+// ============================================================
+{
+  // --- 基本 ---
+  "name": "Low latency",
+  "description": "Lowest-lag streaming",
+  "tags": ["live", "low-latency"],
+
+  // bridge 伺服器監聽位置（瀏覽器 UI 連這個）
+  "host": "127.0.0.1",
+  "port": 8765,
+
+  // --- ASR（語音辨識）---
+  "crispasr": "tools/crispasr/crispasr.exe",
+  "crisp_args": [
+    "--backend", "cohere",
+    "-l", "ja",
+    "-m", "../models/asr/cohere-asr-ja-q6_k.gguf",
+    "--stream-json",
+    "--stream-final-mode", "redecode",
+    "--stream-utterance-max-sec", "15",
+    "--stream-final-on-silence-ms", "200",
+    "--stream-vad-merge-gap-ms", "180",
+    "--stream-length", "5000",
+    "--stream-step", "500",
+    "--stream-partial-decode-ms", "1000",
+    "--vad",
+    "-vm", "../models/vad/firered-vad.gguf",
+    "-vt", "0.85",
+    "-vspd", "180",
+    "-vsd", "150",
+    "-vmsd", "130",
+    "-vp", "110"
+  ],
+
+  // --- 翻譯 ---
+  "translate_model": "Hy-MT2-1.8B",
+  "translate_url": "http://127.0.0.1:8080/v1/chat/completions",
+  "translate_window": 4,
+  "temperature": 0.7,
+  "top_k": 20,
+  "top_p": 0.6,
+  "repeat_penalty": 1.05,
+  "max_tokens": 4096,
+  "translate_prompt_file": "",
+  "glossary_file": "",
+
+  // --- Overlay（字幕顯示）---
+  "overlay_mode": "both",
+  "overlay_interj_len": 3,
+  "overlay_interj_ratio": 0.4,
+  "overlay_interj_gap_sec": 2.0
+}
