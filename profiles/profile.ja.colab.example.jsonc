@@ -28,25 +28,25 @@
 
   // 直接透傳給遠端 CrispASR 的 CLI 參數
   // 注意：遠端模式路徑不以 ../ 開頭（在 Colab 根目錄解析）
-  // 以下參數與本機 profile-low-latency.jsonc 一致
+  // 以下參數與本機 profile-stable-ja.jsonc 一致（T4 適用）
   "crisp_args": [
     "--backend", "cohere",
     "-l", "ja",
     "-m", "models/asr/cohere-asr-ja-q6_k.gguf",
     "--stream-json",
     "--stream-final-mode", "redecode",
-    "--stream-utterance-max-sec", "15",
-    "--stream-final-on-silence-ms", "200",
-    "--stream-vad-merge-gap-ms", "180",
+    "--stream-utterance-max-sec", "60",
+    "--stream-final-on-silence-ms", "300",
+    "--stream-vad-merge-gap-ms", "250",
     "--stream-length", "5000",
-    "--stream-step", "500",
-    "--stream-partial-decode-ms", "1000",
+    "--stream-step", "1000",
+    "--stream-partial-decode-ms", "1500",
     "--vad",
     "-vm", "models/vad/firered-vad.gguf",
-    "-vt", "0.85",
+    "-vt", "0.70",
     "-vspd", "180",
-    "-vsd", "150",
-    "-vmsd", "130",
+    "-vsd", "330",
+    "-vmsd", "10",
     "-vp", "110"
   ],
 
@@ -58,7 +58,7 @@
   "translate_url": "https://YOUR-COLAB-TUNNEL.trycloudflare.com/v1/chat/completions",
 
   // 用多少筆最近翻譯當上下文
-  "translate_window": 4,
+  "translate_window": 8,
 
   // 翻譯抽樣參數
   "temperature": 0.7,
