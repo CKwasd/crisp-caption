@@ -14,6 +14,10 @@ button, select {
   color: var(--ink); font: inherit; min-height: 38px; padding: 0 12px;
 }
 button { cursor: pointer; }
+:is(button, select, input, textarea, a):focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
 button:hover { border-color: var(--blue); }
 button:disabled { opacity: .65; cursor: not-allowed; color: #657181; }
 button.primary { border-color: var(--blue); }
@@ -39,10 +43,17 @@ button.danger { border-color: var(--red); }
 .status-item span:nth-child(2) { color: var(--muted); font-size: 13px; }
 .status-item strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .error-banner {
-  display: none; background: #3a1518; border: 1px solid var(--red); border-radius: 8px;
-  color: var(--red); font-size: 13px; line-height: 1.35; padding: 10px;
+  display: none; align-items: center; gap: 8px; background: #3a1518;
+  border: 1px solid var(--red); border-radius: 8px; color: var(--red);
+  font-size: 13px; line-height: 1.35; padding: 9px 10px;
 }
-.error-banner.show { display: block; }
+.error-banner.show { display: flex; }
+.error-banner-close {
+  flex-shrink: 0; margin-left: auto; min-width: 26px; min-height: 26px; padding: 0;
+  border: 1px solid var(--red); border-radius: 6px; background: transparent;
+  color: var(--red); font-size: 16px; line-height: 1;
+}
+.error-banner-close:hover { border-color: var(--red); background: rgba(255,180,171,.12); }
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
 .stat b { display: block; font-size: 20px; }
@@ -128,3 +139,34 @@ button.danger { border-color: var(--red); }
 .modal-actions { margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; }
 .modal-actions button { margin: 0; }
 .conn-disabled { opacity: .5; pointer-events: none; }
+
+/* ---- Live input level meter ---- */
+.vu-meter { display: none; }
+.vu-meter.active { display: block; }
+.vu-track {
+  height: 8px; border-radius: 999px; background: #0c0e13;
+  border: 1px solid var(--line); overflow: hidden;
+}
+.vu-fill {
+  width: 0%; height: 100%; background: var(--green);
+  transition: width 80ms linear;
+}
+.vu-meter.active .vu-fill.hot { background: linear-gradient(90deg, var(--green), var(--yellow), var(--red)); }
+
+/* ---- Busy button state ---- */
+button.busy { cursor: progress; opacity: .78; pointer-events: none; position: relative; color: transparent; }
+button.busy::after {
+  content: '…'; position: absolute; inset: 0; display: grid;
+  place-content: center; color: var(--ink); font-weight: 700;
+}
+
+/* ---- Toast ---- */
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  background: #1e2a25; border: 1px solid var(--green); color: var(--ink);
+  padding: 10px 16px; border-radius: 8px; font-size: 13px; z-index: 200;
+  box-shadow: 0 8px 30px rgba(0,0,0,.4); max-width: 90vw;
+}
+.toast.warn { background: #33291a; border-color: var(--yellow); }
+
+.modal.modal-sm { width: min(420px, 92vw); }

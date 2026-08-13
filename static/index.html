@@ -20,16 +20,22 @@
         <button type="button" id="btn-mic">Microphone</button>
         <button type="button" class="danger" id="btn-stop" disabled>Stop</button>
       </div>
+      <div class="vu-meter" id="vu-meter" title="Live input level from the captured audio">
+        <div class="vu-track"><div class="vu-fill" id="vu-fill"></div></div>
+      </div>
     </section>
     <section class="section">
       <div class="label">Status</div>
-      <div id="error-banner" class="error-banner"></div>
+      <div id="error-banner" class="error-banner">
+        <span id="error-banner-text"></span>
+        <button type="button" class="error-banner-close" id="error-banner-close" title="Dismiss">×</button>
+      </div>
       <div class="status-list">
         <div class="status-item"><span class="dot" id="dot-capture"></span><span>Capture</span><strong id="txt-capture">idle</strong></div>
         <div class="status-item"><span class="dot" id="dot-crisp"></span><span>CrispASR</span><strong id="txt-crisp">stopped</strong></div>
         <div class="status-item"><span class="dot" id="dot-profile"></span><span>Profile</span><strong id="txt-profile">none</strong></div>
         <div class="status-item"><span class="dot" id="dot-translator"></span><span>Translator</span><strong id="txt-translator">disabled / queue 0</strong></div>
-        <div class="status-item"><span class="dot" id="dot-latency"></span><span>Latency &Delta;</span><strong id="txt-latency">--</strong></div>
+        <div class="status-item" title="Audio delay in seconds (delay = how far captions trail the sound; lower is better)"><span class="dot" id="dot-latency"></span><span>Latency</span><strong id="txt-latency">--</strong></div>
       </div>
     </section>
     <section class="section">
@@ -61,7 +67,7 @@
         <button type="button" id="btn-overlay">Overlay</button>
         <button type="button" id="btn-overlay-stop" disabled>Stop Overlay</button>
         <button type="button" id="btn-export">Export</button>
-        <button type="button" id="btn-connect" title="Connection settings">Connect</button>
+        <button type="button" id="btn-connect" title="Configure profile, ASR and translation, then start">Setup &amp; Start</button>
         <button type="button" id="btn-diag">Diagnostics</button>
         <div class="settings-wrap">
           <button type="button" class="icon-button" id="btn-settings" title="Settings">⚙</button>
@@ -137,6 +143,46 @@
     </div>
   </div>
 </div>
+
+<!-- Export subtitles modal -->
+<div class="modal-overlay" id="export-modal" hidden>
+  <div class="modal modal-sm">
+    <div class="modal-title">Export subtitles</div>
+    <div class="modal-body">
+      <label class="field-row"><span>Filename</span>
+        <input type="text" id="export-filename" value="crispasr-subtitles">
+      </label>
+      <label class="field-row"><span>Format</span>
+        <select id="export-format">
+          <option value="vtt">WebVTT (.vtt)</option>
+          <option value="srt">SubRip (.srt)</option>
+          <option value="txt">Plain text (.txt)</option>
+        </select>
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button type="button" id="btn-export-apply" class="primary">Export</button>
+      <button type="button" id="btn-export-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm modal -->
+<div class="modal-overlay" id="confirm-modal" hidden>
+  <div class="modal modal-sm">
+    <div class="modal-title">Please confirm</div>
+    <div class="modal-body">
+      <p id="confirm-text" style="margin:0 0 6px;line-height:1.4"></p>
+      <p id="confirm-sub" style="margin:0;color:var(--muted);font-size:13px;line-height:1.4"></p>
+    </div>
+    <div class="modal-actions">
+      <button type="button" id="btn-confirm-ok" class="primary">Continue</button>
+      <button type="button" id="btn-confirm-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
 </body>
-<script src="/static/app.js?v=3"></script>
+<script src="/static/app.js?v=4"></script>
 </html>

@@ -10,9 +10,10 @@
     rows: new Map(), finalSeq: new Map(),
     stats: { partial: 0, final: 0, translation: 0, error: 0 },
     settings: { showPartials: true, displayMode: 'both', autoScroll: true, fontPx: 18 },
-    profileBusy: false, logLines: [],
+    profileBusy: false, logLines: [], lastErrorDismissed: false,
   };
   let pc = null, stream = null, ws = null, reconnectTimer = 0;
+  let vuCtx = null, vuRaf = 0;
 
   function nowLabel() {
     return new Date().toLocaleTimeString([], { hour12: false });
@@ -63,7 +64,7 @@
     $('txt-translator').textContent = `${state.translator} / queue ${state.queue}`;
     dot($('dot-translator'), translatorDot(state.translator));
     const lat = state.latency;
-    $('txt-latency').textContent = lat === 0 ? '0.0/s' : `${lat > 0 ? '+' : ''}${lat.toFixed(1)}/s`;
+    $('txt-latency').textContent = lat === 0 ? '0.0s' : `${lat.toFixed(1)}s`;
     $('session-label').textContent = state.sessionLabel;
     $('st-partial').textContent = state.stats.partial;
     $('st-final').textContent = state.stats.final;
@@ -71,8 +72,11 @@
     $('st-err').textContent = state.stats.error;
     const err = (state.lastError || '').trim();
     const banner = $('error-banner');
-    if (err) { banner.textContent = err; banner.classList.add('show'); }
-    else { banner.textContent = ''; banner.classList.remove('show'); }
+    if (err && !state.lastErrorDismissed) {
+      $('error-banner-text').textContent = err;
+      banner.classList.add('show');
+    }
+    else { banner.classList.remove('show'); $('error-banner-text').textContent = ''; }
     $('btn-tab').disabled = !captureAllowed();
     $('btn-mic').disabled = !captureAllowed();
     $('btn-stop').disabled = state.audioState === 'none';
@@ -148,7 +152,42 @@
     renderTranscript();
   }
 
+  function startVuMeter(media) {
+    stopVuMeter();
+    const el = $('vu-meter');
+    if (!el || !media) return;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    try {
+      vuCtx = new AudioCtx();
+      const src = vuCtx.createMediaStreamSource(media);
+      const analyser = vuCtx.createAnalyser();
+      analyser.fftSize = 512; analyser.smoothingTimeConstant = 0.55;
+      src.connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const fill = $('vu-fill');
+      el.classList.add('active');
+      const tick = () => {
+        analyser.getByteFrequencyData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+        const rms = Math.sqrt(sum / data.length);
+        const pct = Math.min(100, Math.round((rms / 255) * 100));
+        fill.style.width = (pct > 1 ? pct : 0) + '%';
+        fill.classList.toggle('hot', pct > 70);
+        vuRaf = requestAnimationFrame(tick);
+      };
+      tick();
+    } catch (_) { vuCtx = null; }
+  }
+  function stopVuMeter() {
+    if (vuRaf) { cancelAnimationFrame(vuRaf); vuRaf = 0; }
+    if (vuCtx) { try { vuCtx.close(); } catch (_) {} vuCtx = null; }
+    const el = $('vu-meter'); if (el) el.classList.remove('active');
+    const fill = $('vu-fill'); if (fill) { fill.style.width = '0%'; fill.classList.remove('hot'); }
+  }
   function stopCapture() {
+    stopVuMeter();
     if (stream) {
       stream.getTracks().forEach((t) => t.stop());
       stream = null;
@@ -206,6 +245,7 @@
     await pc.setRemoteDescription({ type: answer.type, sdp: answer.sdp });
     state.rtcState = 'connected';
     log(`Capture connected: ${label}`);
+    startVuMeter(stream);
     paint();
   }
   async function startTab() {
@@ -276,7 +316,7 @@
       state.crisp = msg.crisp_status || state.crisp;
       state.latency = Number(msg.latency_sec) || 0;
       const err = (msg.last_error || '').trim();
-      if (err && err !== state.lastError) log(err);
+      if (err && err !== state.lastError) { state.lastErrorDismissed = false; log(err); }
       state.lastError = err;
       renderProfiles();
     }
@@ -299,7 +339,20 @@
   }
   async function changeProfile(name) {
     if (!name || state.profileBusy) return;
+    const capturing = state.audioState !== 'none';
+    if (capturing) {
+      if (state.rows.size > 0) {
+        const ok = await askConfirm(
+          'Switch profile now?',
+          'This will stop the current capture. Your transcript will be kept.'
+        );
+        if (!ok) { $('profile-select').value = state.profile || ''; return; }
+      } else {
+        log('Switching profile: capture stopped');
+      }
+    }
     state.profileBusy = true;
+    busy($('btn-load'), true);
     stopCapture();
     paint();
     try {
@@ -323,11 +376,14 @@
       localStorage.setItem(LAST_PROFILE_KEY, name);
       log(`Profile selected: ${state.profile}`);
       renderProfiles();
+      toast(`Switched to profile "${state.profile}"`);
     } catch (e) {
       log(`Profile switch error: ${e.message || e}`);
+      toast(e.message || 'Profile switch failed', 'warn');
       await loadProfiles();
     } finally {
       state.profileBusy = false;
+      busy($('btn-load'), false);
       paint();
     }
   }
@@ -339,23 +395,33 @@
     paint();
   }
   async function startOverlay() {
+    busy($('btn-overlay'), true);
     try {
       const res = await fetch('/overlay/start', { method: 'POST' });
       if (!res.ok) throw new Error((await res.text()) || `Overlay start failed (${res.status})`);
       log('Subtitle overlay started');
       $('btn-overlay-stop').disabled = false;
+      toast('Subtitle overlay started');
     } catch (e) {
       log(`Overlay error: ${e.message || e}`);
+      toast(e.message || 'Overlay start failed', 'warn');
+    } finally {
+      busy($('btn-overlay'), false);
     }
   }
   async function stopOverlay() {
+    busy($('btn-overlay-stop'), true);
     try {
       const res = await fetch('/overlay/stop', { method: 'POST' });
       if (!res.ok) throw new Error(`Overlay stop failed (${res.status})`);
       log('Subtitle overlay stopped');
       $('btn-overlay-stop').disabled = true;
+      toast('Subtitle overlay stopped');
     } catch (e) {
       log(`Overlay error: ${e.message || e}`);
+      toast(e.message || 'Overlay stop failed', 'warn');
+    } finally {
+      busy($('btn-overlay-stop'), false);
     }
   }
   async function syncOverlayStatus() {
@@ -374,22 +440,80 @@
     const ms = Math.floor((v - Math.floor(v)) * 1000);
     return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(ms).padStart(3,'0')}`;
   }
-  function exportVtt() {
+  let toastTimer = 0;
+  function toast(msg, kind) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.className = 'toast' + (kind === 'warn' ? ' warn' : '');
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
+  }
+  function busy(btn, on) { if (btn) btn.classList.toggle('busy', !!on); }
+
+  function srtTime(sec) {
+    const v = Math.max(0, Number(sec) || 0);
+    const h = Math.floor(v / 3600);
+    const m = Math.floor((v % 3600) / 60);
+    const s = Math.floor(v % 60);
+    const ms = Math.floor((v - Math.floor(v)) * 1000);
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')},${String(ms).padStart(3,'0')}`;
+  }
+  function openExportModal() {
+    $('export-modal').hidden = false;
+    const f = $('export-filename');
+    f.value = 'crispasr-subtitles';
+    f.focus(); f.select();
+  }
+  function closeExportModal() { $('export-modal').hidden = true; }
+
+  function doExport() {
+    const format = $('export-format').value;
+    const base = ($('export-filename').value.trim() || 'crispasr-subtitles')
+      .replace(/[\\/:*?"<>|]/g, '_');
     const finals = [...state.rows.values()].filter((r) => r.kind === 'final');
-    const cues = finals.map((row, i) => {
-      const start = row.t0 != null ? Number(row.t0) : i * 3;
-      const end = row.t1 != null ? Number(row.t1) : start + 3;
-      let text;
-      if (state.settings.displayMode === 'translation') text = row.error || row.translation || '';
-      else text = [row.text, row.error || row.translation].filter(Boolean).join('\n');
-      return `${i + 1}\n${vttTime(start)} --> ${vttTime(Math.max(end, start + 0.5))}\n${text}`;
-    });
-    const blob = new Blob([`WEBVTT\n\n${cues.join('\n\n')}\n`], { type: 'text/vtt' });
+    const entries = finals
+      .map((row) => {
+        const start = row.t0 != null ? Number(row.t0) : -1;
+        const end = row.t1 != null ? Number(row.t1) : -1;
+        let text;
+        if (state.settings.displayMode === 'translation') text = (row.error || row.translation || '').trim();
+        else text = [row.text, row.error || row.translation].filter(Boolean).join('\n').trim();
+        return { start, end, text };
+      })
+      .filter((e) => e.text);
+    let content = '';
+    if (format === 'txt') {
+      content = entries.map((e) => e.text).join('\n\n') + '\n';
+    } else {
+      const time = format === 'vtt' ? vttTime : srtTime;
+      const cues = entries.map((e, i) => {
+        const start = e.start >= 0 ? e.start : i * 3;
+        const end = e.end >= 0 ? e.end : start + 3;
+        const t = `${time(start)} --> ${time(Math.max(end, start + 0.5))}`;
+        return format === 'vtt' ? `${t}\n${e.text}` : `${i + 1}\n${t}\n${e.text}`;
+      });
+      content = format === 'vtt'
+        ? `WEBVTT\n\n${cues.join('\n\n')}\n`
+        : `${cues.join('\n\n')}\n`;
+    }
+    const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'crispasr-subtitles.vtt';
+    a.href = url; a.download = `${base}.${format}`;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
+    closeExportModal();
+    toast(`Exported ${entries.length} ${entries.length === 1 ? 'cue' : 'cues'} as .${format}`);
+  }
+
+  let confirmResolve = null;
+  const confirmModal = $('confirm-modal');
+  function askConfirm(text, sub) {
+    $('confirm-text').textContent = text;
+    $('confirm-sub').textContent = sub || '';
+    confirmModal.hidden = false;
+    return new Promise((res) => { confirmResolve = res; });
   }
 
   // ---- Connection modal ----
@@ -441,6 +565,7 @@
       : { mode: 'remote', url: $('conn-trans-url').value.trim(), key: $('conn-trans-key').value.trim() };
     closeConnModal();
     state.profileBusy = true;
+    busy($('btn-connect'), true);
     stopCapture();
     paint();
     try {
@@ -464,6 +589,7 @@
       await loadProfiles();
     } finally {
       state.profileBusy = false;
+      busy($('btn-connect'), false);
       paint();
     }
   }
@@ -475,7 +601,26 @@
   $('btn-clear').onclick = clearTranscript;
   $('btn-overlay').onclick = startOverlay;
   $('btn-overlay-stop').onclick = stopOverlay;
-  $('btn-export').onclick = exportVtt;
+  $('btn-export').onclick = openExportModal;
+  $('btn-export-apply').onclick = doExport;
+  $('btn-export-cancel').onclick = closeExportModal;
+  $('export-modal').addEventListener('click', (e) => {
+    if (e.target === $('export-modal')) closeExportModal();
+  });
+  $('btn-confirm-ok').onclick = () => {
+    const r = confirmResolve; confirmResolve = null;
+    confirmModal.hidden = true; if (r) r(true);
+  };
+  $('btn-confirm-cancel').onclick = () => {
+    const r = confirmResolve; confirmResolve = null;
+    confirmModal.hidden = true; if (r) r(false);
+  };
+  confirmModal.addEventListener('click', (e) => {
+    if (e.target === confirmModal) {
+      const r = confirmResolve; confirmResolve = null;
+      confirmModal.hidden = true; if (r) r(false);
+    }
+  });
   $('btn-connect').onclick = openConnModal;
   $('btn-conn-apply').onclick = applyConnection;
   $('btn-conn-cancel').onclick = closeConnModal;
@@ -485,6 +630,10 @@
   $('conn-asr-mode').onchange = syncConnFields;
   $('conn-trans-mode').onchange = syncConnFields;
   $('btn-diag').onclick = () => window.open('/diagnostics', '_blank');
+  $('error-banner-close').onclick = () => {
+    state.lastErrorDismissed = true;
+    paint();
+  };
   $('btn-settings').onclick = () => $('settings').classList.toggle('open');
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.settings-wrap')) $('settings').classList.remove('open');
