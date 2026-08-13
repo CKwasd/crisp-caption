@@ -120,15 +120,36 @@ if not exist ".venv\Scripts\python.exe" (
   pause
   goto menu
 )
-if exist "tools\llama.cpp\llama-server.exe" (
-  if exist "models\translation\Hy-MT2-1.8B-Q4_K_M.gguf" (
-    scripts\_run_py.bat -c "import urllib.request as u; exit(0 if u.urlopen('http://127.0.0.1:8080/health',timeout=2).status<400 else 1)" >nul 2>nul
-    if errorlevel 1 (
-      echo Starting translation server in a new window...
-      start "crisp-caption translation" cmd /k scripts\start-translation-server-windows.bat
-    )
-  )
+set "LLAMA_SERVER=tools\llama.cpp\llama-server.exe"
+set "MODEL=models\translation\Hy-MT2-1.8B-Q4_K_M.gguf"
+set "BACKEND=vulkan"
+if exist "tools\llama.cpp\.backend" set /p BACKEND=<tools\llama.cpp\.backend
+set "CTX=8192"
+set "BATCH=2048"
+set "UBATCH=1024"
+if /I "%LOW_VRAM%"=="1" (
+  set "CTX=4096"
+  set "BATCH=512"
+  set "UBATCH=256"
 )
+if not exist "%LLAMA_SERVER%" (
+  echo [FAIL] llama-server not found: %LLAMA_SERVER%. Download via menu 2.
+  pause
+  goto menu
+)
+if not exist "%MODEL%" (
+  echo [FAIL] Translation model not found: %MODEL%. Download models via menu 2.
+  pause
+  goto menu
+)
+set "COMMON=-m %MODEL% -a Hy-MT2-1.8B -ngl all -sm none -c %CTX% -b %BATCH% -ub %UBATCH% -fa on -np 1 --cache-prompt --cache-reuse 64 --host 127.0.0.1 --port 8080"
+if /I "%BACKEND%"=="cuda" (
+  set "LLAMA_CMD=%LLAMA_SERVER% %COMMON%"
+) else (
+  set "LLAMA_CMD=%LLAMA_SERVER% -dev Vulkan0 %COMMON%"
+)
+echo Starting translation server in a new window (backend=%BACKEND%)...
+start "crisp-caption translation" cmd /k "%LLAMA_CMD%"
 start "" http://127.0.0.1:8765/
 call scripts\_run_py.bat bridge_server.py
 pause
