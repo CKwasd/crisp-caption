@@ -1,5 +1,7 @@
 # crisp-caption
 
+**以其他語言閱讀：** [English](README.md) | 繁體中文
+
 **即時日文字幕與翻譯 — 在瀏覽器影片、直播、OBS 上即時顯示，並在你的 GPU 上本地執行。**
 
 crisp-caption 在瀏覽器中擷取分頁或麥克風音訊，串流到 CrispASR（Vulkan 加速的串流語音辨識），以本地 llama.cpp 伺服器翻譯最終語句，並在瀏覽器、透明桌面浮窗或 OBS Browser Source 中顯示字幕。
@@ -283,6 +285,3 @@ crisp-caption.bat
 
 `crisp-caption` 原始碼以 Apache License 2.0 授權。由 helper 腳本下載的執行檔與模型檔案是第三方產物，受各自授權規範。詳見 `docs\third-party.md`。
 
----
-
-**以其他語言閱讀：** [English](README.md) | 繁體中文

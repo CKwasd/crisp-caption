@@ -1,5 +1,7 @@
 # crisp-caption
 
+**Read this in another language:** [繁體中文](README.zh-TW.md) | English
+
 **Real-time live Japanese captions and translation for browser video, livestreams, and OBS — running locally on your GPU.**
 
 crisp-caption captures tab or microphone audio in the browser, streams it to CrispASR (a Vulkan-accelerated streaming ASR), translates finalized utterances with a local llama.cpp server, and displays subtitles in the browser, a transparent desktop overlay, or an OBS Browser Source.
@@ -284,6 +286,3 @@ Use the virtual environment Python after setup:
 
 `crisp-caption` source code is licensed under the Apache License 2.0. Runtime binaries and model files downloaded by the helper scripts are third-party artifacts under their own licenses. See `docs\third-party.md`.
 
----
-
-**Read this in another language:** [繁體中文](README.zh-TW.md) | English
