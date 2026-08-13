@@ -315,6 +315,65 @@ async def async_main(cfg: BridgeRunConfig, host: str, port: int) -> None:
             "crisp_status": bridge_state.crisp_status,
         }
 
+    async def test_sources(
+        asr_source: dict[str, str] | None,
+        translate_source: dict[str, str] | None,
+    ) -> dict[str, object]:
+        async with aiohttp.ClientSession() as session:
+            asr_result: dict[str, object] = {
+                "ok": True,
+                "message": "Local ASR (no remote connection to test)",
+            }
+            if asr_source and asr_source.get("mode") == "remote":
+                url = str(asr_source.get("url") or "").strip()
+                if not url:
+                    asr_result = {"ok": False, "message": "WebSocket URL is empty"}
+                else:
+                    try:
+                        async with session.ws_connect(
+                            url, timeout=aiohttp.ClientTimeout(total=5.0)
+                        ) as _ws:
+                            asr_result = {"ok": True, "message": "WebSocket reachable"}
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:  # noqa: BLE001
+                        asr_result = {"ok": False, "message": str(exc)[:180]}
+
+            trans_result: dict[str, object] = {
+                "ok": True,
+                "message": "Local translation (no remote connection to test)",
+            }
+            if translate_source and translate_source.get("mode") == "remote":
+                url = str(translate_source.get("url") or "").strip()
+                key = str(translate_source.get("key") or "").strip()
+                if not url:
+                    trans_result = {"ok": False, "message": "API URL is empty"}
+                else:
+                    health_url = translate_health_url(url)
+                    headers = {"Authorization": f"Bearer {key}"} if key else None
+                    try:
+                        async with session.get(
+                            health_url,
+                            headers=headers,
+                            timeout=aiohttp.ClientTimeout(total=5.0),
+                        ) as resp:
+                            if 200 <= resp.status < 300:
+                                trans_result = {
+                                    "ok": True,
+                                    "message": f"Health endpoint reachable (HTTP {resp.status})",
+                                }
+                            else:
+                                trans_result = {
+                                    "ok": False,
+                                    "message": f"Health endpoint returned HTTP {resp.status}",
+                                }
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:  # noqa: BLE001
+                        trans_result = {"ok": False, "message": str(exc)[:180]}
+
+            return {"asr": asr_result, "translation": trans_result}
+
     if cfg.crisp_args:
         try:
             await runtime.start(cfg)
@@ -336,6 +395,7 @@ async def async_main(cfg: BridgeRunConfig, host: str, port: int) -> None:
             bridge_state,
             list_profiles=list_profiles,
             select_profile=select_profile,
+            test_profiles=test_sources,
         )
     )
     await runner.setup()

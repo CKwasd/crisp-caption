@@ -98,47 +98,79 @@
 </div>
 
 <!-- 連線設定 modal -->
-<div class="modal-overlay" id="connect-modal" hidden>
+<div class="modal-overlay" id="connect-modal" hidden role="dialog" aria-modal="true" aria-labelledby="conn-title">
   <div class="modal">
-    <div class="modal-title">Connection settings</div>
+    <div class="modal-title" id="conn-title">Connection settings</div>
     <div class="modal-body">
-      <label class="field-row"><span>Profile</span>
-        <select id="conn-profile"></select>
-      </label>
+      <p class="conn-intro">Choose a profile and configure where ASR & translation run.</p>
+      <div class="conn-profile-block">
+        <label class="field-row" for="conn-profile"><span class="field-label">Profile</span>
+          <select id="conn-profile"></select>
+        </label>
+        <p class="field-hint" id="conn-profile-desc">Select a profile to see its description.</p>
+      </div>
+
       <div class="modal-group">
         <div class="modal-group-title">ASR (CrispASR)</div>
-        <label class="field-row"><span>Source</span>
+        <label class="field-row" for="conn-asr-mode"><span class="field-label">Source</span>
           <select id="conn-asr-mode">
             <option value="local">Local</option>
             <option value="remote">Notebook / Remote</option>
           </select>
         </label>
-        <label class="field-row conn-asr-remote"><span>WebSocket URL</span>
-          <input type="text" id="conn-asr-url" placeholder="wss://.../asr/stream">
-        </label>
-        <label class="field-row conn-asr-remote"><span>ASR Key</span>
-          <input type="password" id="conn-asr-key" placeholder="CRISPASR_REMOTE_KEY">
-        </label>
+        <div class="field-row conn-asr-remote" data-error-for="asr-url">
+          <span class="field-label">WebSocket URL</span>
+          <div class="input-wrap">
+            <input type="text" id="conn-asr-url" placeholder="wss://…/asr/stream" autocomplete="off" spellcheck="false">
+            <p class="field-error" data-error="asr-url"></p>
+          </div>
+        </div>
+        <div class="field-row conn-asr-remote" data-error-for="asr-key">
+          <span class="field-label">ASR Key</span>
+          <div class="input-wrap">
+            <div class="secret-wrap">
+              <input type="password" id="conn-asr-key" placeholder="CRISPASR_REMOTE_KEY" autocomplete="off">
+              <button type="button" class="secret-toggle" data-target="conn-asr-key" title="Show / hide key">👁</button>
+            </div>
+            <p class="field-error" data-error="asr-key"></p>
+          </div>
+        </div>
       </div>
+
       <div class="modal-group">
         <div class="modal-group-title">Translation</div>
-        <label class="field-row"><span>Source</span>
+        <label class="field-row" for="conn-trans-mode"><span class="field-label">Source</span>
           <select id="conn-trans-mode">
             <option value="local">Local</option>
             <option value="remote">Notebook / Remote</option>
             <option value="api">Own API</option>
           </select>
         </label>
-        <label class="field-row conn-trans-remote"><span>URL</span>
-          <input type="text" id="conn-trans-url" placeholder="https://.../v1/chat/completions">
-        </label>
-        <label class="field-row conn-trans-remote"><span>Key</span>
-          <input type="password" id="conn-trans-key" placeholder="OPENAI_API_KEY">
-        </label>
+        <div class="field-row conn-trans-remote" data-error-for="trans-url">
+          <span class="field-label">URL</span>
+          <div class="input-wrap">
+            <input type="text" id="conn-trans-url" placeholder="https://…/v1/chat/completions" autocomplete="off" spellcheck="false">
+            <p class="field-error" data-error="trans-url"></p>
+          </div>
+        </div>
+        <div class="field-row conn-trans-remote" data-error-for="trans-key">
+          <span class="field-label">Key</span>
+          <div class="input-wrap">
+            <div class="secret-wrap">
+              <input type="password" id="conn-trans-key" placeholder="OPENAI_API_KEY" autocomplete="off">
+              <button type="button" class="secret-toggle" data-target="conn-trans-key" title="Show / hide key">👁</button>
+            </div>
+            <p class="field-error" data-error="trans-key"></p>
+          </div>
+        </div>
       </div>
+
+      <div class="conn-test-result" id="conn-test-result" hidden></div>
+
       <div class="modal-actions">
-        <button type="button" id="btn-conn-apply" class="primary">Apply & start</button>
+        <button type="button" id="btn-conn-test">Test connection</button>
         <button type="button" id="btn-conn-cancel">Cancel</button>
+        <button type="button" id="btn-conn-apply" class="primary">Apply & start</button>
       </div>
     </div>
   </div>

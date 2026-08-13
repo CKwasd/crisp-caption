@@ -65,6 +65,9 @@ def make_app(
     select_profile: Callable[
         [str, dict[str, str] | None, dict[str, str] | None], Awaitable[dict[str, object]]
     ],
+    test_profiles: Callable[
+        [dict[str, str] | None, dict[str, str] | None], Awaitable[dict[str, object]]
+    ] | None = None,
 ) -> web.Application:
     pcs: set[RTCPeerConnection] = set()
     offer_lock = asyncio.Lock()
@@ -231,6 +234,30 @@ def make_app(
             return web.json_response({"error": str(exc)}, status=500)
         return web.json_response(result)
 
+    async def test_profiles_handler(req: web.Request) -> web.Response:
+        if test_profiles is None:
+            return web.json_response({"error": "Connection testing is not available."}, status=501)
+        try:
+            data = await req.json()
+        except json.JSONDecodeError:
+            return web.json_response({"error": "Expected JSON body."}, status=400)
+        asr_source = (
+            data.get("asr_source")
+            if isinstance(data, dict) and isinstance(data.get("asr_source"), dict)
+            else None
+        )
+        translate_source = (
+            data.get("translate_source")
+            if isinstance(data, dict) and isinstance(data.get("translate_source"), dict)
+            else None
+        )
+        try:
+            result = await test_profiles(asr_source, translate_source)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Connection test failed")
+            return web.json_response({"error": str(exc)}, status=500)
+        return web.json_response(result)
+
     async def start_overlay(req: web.Request) -> web.Response:
         nonlocal overlay_process
         if overlay_process and overlay_process.poll() is None:
@@ -290,6 +317,7 @@ def make_app(
     app.router.add_get("/overlay/status", overlay_status)
     app.router.add_get("/profiles", profiles_handler)
     app.router.add_post("/profiles/select", select_profile_handler)
+    app.router.add_post("/profiles/test", test_profiles_handler)
     app.router.add_get("/ws", ws_handler)
     app.on_cleanup.append(cleanup)
     return app

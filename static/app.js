@@ -521,6 +521,12 @@
   // ---- Connection modal ----
   const connModal = $('connect-modal');
   const connProfile = $('conn-profile');
+  function updateConnProfileDesc() {
+    const desc = $('conn-profile-desc');
+    if (!desc) return;
+    const p = (state.profiles || []).find((x) => x.name === connProfile.value);
+    desc.textContent = (p && p.description) ? p.description : 'Select a profile to see its description.';
+  }
   function fillConnProfile() {
     connProfile.innerHTML = '';
     (state.profiles || []).forEach((p) => {
@@ -532,6 +538,7 @@
     if (connProfile.options.length && ![...connProfile.options].some((o) => o.value === connProfile.value)) {
       connProfile.value = connProfile.options[0].value;
     }
+    updateConnProfileDesc();
   }
   function setFieldDisabled(sel, disabled) {
     document.querySelectorAll(sel).forEach((label) => {
@@ -540,23 +547,59 @@
       if (input) input.disabled = disabled;
     });
   }
+  function clearErrors() {
+    document.querySelectorAll('.field-error').forEach((el) => { el.textContent = ''; });
+    document.querySelectorAll('.field-row').forEach((r) => r.classList.remove('has-error'));
+    const tr = $('conn-test-result');
+    if (tr) tr.hidden = true;
+  }
+  function setError(key, msg) {
+    const el = document.querySelector(`.field-error[data-error="${key}"]`);
+    if (el) el.textContent = msg;
+    const row = document.querySelector(`.field-row[data-error-for="${key}"]`);
+    if (row) row.classList.add('has-error');
+  }
+  function validateConnFields() {
+    clearErrors();
+    let ok = true;
+    if ($('conn-asr-mode').value === 'remote') {
+      const url = $('conn-asr-url').value.trim();
+      if (!url) { setError('asr-url', 'WebSocket URL is required.'); ok = false; }
+      else if (!/^wss?:\/\//i.test(url)) { setError('asr-url', 'URL must start with ws:// or wss://'); ok = false; }
+    }
+    if ($('conn-trans-mode').value !== 'local') {
+      const url = $('conn-trans-url').value.trim();
+      if (!url) { setError('trans-url', 'API URL is required.'); ok = false; }
+      else if (!/^https?:\/\//i.test(url)) { setError('trans-url', 'URL must start with http:// or https://'); ok = false; }
+    }
+    return ok;
+  }
   function syncConnFields() {
     const asrRemote = $('conn-asr-mode').value === 'remote';
     setFieldDisabled('.conn-asr-remote', !asrRemote);
     const transRemote = $('conn-trans-mode').value !== 'local';
     setFieldDisabled('.conn-trans-remote', !transRemote);
+    clearErrors();
   }
   function openConnModal() {
     fillConnProfile();
     syncConnFields();
+    clearErrors();
     connModal.hidden = false;
+    if (connProfile) connProfile.focus();
   }
   function closeConnModal() {
     connModal.hidden = true;
   }
-  async function applyConnection() {
-    const name = connProfile.value;
-    if (!name) { log('Connect: no profile selected'); return; }
+  function toggleSecret(btn) {
+    const target = $(btn.dataset.target);
+    if (!target) return;
+    const reveal = target.type === 'password';
+    target.type = reveal ? 'text' : 'password';
+    btn.classList.toggle('reveal', reveal);
+    btn.title = reveal ? 'Hide key' : 'Show key';
+  }
+  function collectSources() {
     const asrMode = $('conn-asr-mode').value;
     const transMode = $('conn-trans-mode').value;
     const asrSource = asrMode === 'remote'
@@ -565,6 +608,48 @@
     const translateSource = transMode === 'local'
       ? { mode: 'local' }
       : { mode: 'remote', url: $('conn-trans-url').value.trim(), key: $('conn-trans-key').value.trim() };
+    return { asrMode, transMode, asrSource, translateSource };
+  }
+  function showTestResult(html, kind) {
+    const tr = $('conn-test-result');
+    tr.innerHTML = html;
+    tr.className = 'conn-test-result' + (kind ? ` ${kind}` : '');
+    tr.hidden = false;
+  }
+  async function testConnection() {
+    if (!validateConnFields()) return;
+    const { asrSource, translateSource } = collectSources();
+    const btn = $('btn-conn-test');
+    busy(btn, true);
+    try {
+      const res = await fetch('/profiles/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ asr_source: asrSource, translate_source: translateSource }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showTestResult(`<span class="tr-err">Test failed: ${esc(data.error || res.status)}</span>`, 'err');
+        return;
+      }
+      const asr = data.asr || {};
+      const trans = data.translation || {};
+      const items = [
+        `<div class="tr-item ${asr.ok ? 'ok' : 'err'}"><b>ASR</b> ${esc(asr.error || asr.message || '—')}</div>`,
+        `<div class="tr-item ${trans.ok ? 'ok' : 'err'}"><b>Translation</b> ${esc(trans.error || trans.message || '—')}</div>`,
+      ];
+      showTestResult(items.join(''), (asr.ok && trans.ok) ? 'ok' : 'err');
+    } catch (e) {
+      showTestResult(`<span class="tr-err">Test error: ${esc(e.message || e)}</span>`, 'err');
+    } finally {
+      busy(btn, false);
+    }
+  }
+  async function applyConnection() {
+    const name = connProfile.value;
+    if (!name) { log('Connect: no profile selected'); return; }
+    if (!validateConnFields()) return;
+    const { asrMode, transMode, asrSource, translateSource } = collectSources();
     closeConnModal();
     state.profileBusy = true;
     busy($('btn-connect'), true);
@@ -586,8 +671,10 @@
       localStorage.setItem(LAST_PROFILE_KEY, name);
       log(`Connection applied: ${name} (ASR=${asrMode}, translate=${transMode})`);
       renderProfiles();
+      toast(`Profile "${name}" started`);
     } catch (e) {
       log(`Connect error: ${e.message || e}`);
+      toast(e.message || 'Profile switch failed', 'warn');
       await loadProfiles();
     } finally {
       state.profileBusy = false;
@@ -626,11 +713,19 @@
   $('btn-connect').onclick = openConnModal;
   $('btn-conn-apply').onclick = applyConnection;
   $('btn-conn-cancel').onclick = closeConnModal;
+  $('btn-conn-test').onclick = testConnection;
+  connProfile.onchange = updateConnProfileDesc;
   connModal.addEventListener('click', (e) => {
     if (e.target === connModal) closeConnModal();
   });
   $('conn-asr-mode').onchange = syncConnFields;
   $('conn-trans-mode').onchange = syncConnFields;
+  document.querySelectorAll('.secret-toggle').forEach((b) => {
+    b.addEventListener('click', () => toggleSecret(b));
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !connModal.hidden) closeConnModal();
+  });
   $('btn-diag').onclick = () => window.open('/diagnostics', '_blank');
   $('error-banner-close').onclick = () => {
     state.lastErrorDismissed = true;
