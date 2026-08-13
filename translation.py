@@ -223,7 +223,7 @@ async def translator_worker(
                 translate_url,
                 json=payload,
                 headers=headers,
-                timeout=aiohttp.ClientTimeout(total=60),
+                timeout=aiohttp.ClientTimeout(total=180),
             ) as resp:
                 body = await resp.text()
                 if resp.status >= 400:
