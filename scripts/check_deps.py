@@ -14,7 +14,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROFILE = ROOT / "profiles" / "profile.ja.jsonc"
+PROFILE = ROOT / "profiles" / "profile-stable-ja.jsonc"
 
 
 def _strip_jsonc(text: str) -> str:
@@ -89,14 +89,14 @@ def import_exists(name: str) -> bool:
 
 def load_profile() -> dict[str, Any] | None:
     if not PROFILE.is_file():
-        fail("profiles/profile.ja.jsonc not found", "Run scripts\\setup-windows.bat")
+        fail("profiles/profile-stable-ja.jsonc not found", "crisp-caption.bat (menu 1) setup")
         return None
     try:
         data = json.loads(_strip_jsonc(PROFILE.read_text(encoding="utf-8")))
     except Exception as exc:
-        fail(f"profiles/profile.ja.jsonc is invalid JSON: {exc}")
+        fail(f"profiles/profile-stable-ja.jsonc is invalid JSON: {exc}")
         return None
-    ok("profiles/profile.ja.jsonc exists")
+    ok("profiles/profile-stable-ja.jsonc exists")
     return data if isinstance(data, dict) else None
 
 
@@ -129,11 +129,11 @@ def check_packages() -> None:
         if import_exists(package):
             ok(f"Python package import works: {package}")
         else:
-            fail(f"Missing Python package: {package}", "Run scripts\\setup-windows.bat")
+            fail(f"Missing Python package: {package}", "crisp-caption.bat (menu 1) setup")
     if import_exists("PySide6"):
         ok("Optional overlay package import works: PySide6")
     else:
-        warn("Optional overlay package missing: PySide6", "Run scripts\\setup-windows.bat")
+        warn("Optional overlay package missing: PySide6", "crisp-caption.bat (menu 1) setup")
 
 
 def check_frontend() -> None:
@@ -199,32 +199,32 @@ def check_profile(profile: dict[str, Any]) -> None:
                 ok(f"CrispASR found on PATH: {found}")
                 crisp_path = None
             else:
-                fail(f"CrispASR executable not found on PATH: {crisp}", "Run scripts\\download-crispasr-windows.bat or edit profiles\\profile.ja.jsonc")
+                fail(f"CrispASR executable not found on PATH: {crisp}", "crisp-caption.bat (menu 2) download CrispASR or edit profiles\\profile-stable-ja.jsonc")
                 crisp_path = None
         else:
             fail("profile crispasr is empty", "Set crispasr to tools/crispasr/crispasr.exe")
             crisp_path = None
         if crisp_path is not None:
-            check_executable(crisp_path, "CrispASR", "Run scripts\\download-crispasr-windows.bat")
+            check_executable(crisp_path, "CrispASR", "crisp-caption.bat (menu 2) download CrispASR")
 
         asr_model = crisp_arg_path(profile, "-m")
         if asr_model:
-            check_executable(asr_model, "ASR model", "Run scripts\\models-download.bat")
+            check_executable(asr_model, "ASR model", "crisp-caption.bat (menu 2) download models")
         vad_model = crisp_arg_path(profile, "-vm")
         if vad_model:
-            check_executable(vad_model, "VAD model", "Run scripts\\models-download.bat")
+            check_executable(vad_model, "VAD model", "crisp-caption.bat (menu 2) download models")
 
     translate_model = str(profile.get("translate_model") or "").strip()
     if translate_model:
         translate_url = str(profile.get("translate_url") or "http://127.0.0.1:8080/v1/chat/completions")
         if is_local_url(translate_url):
-            check_executable(ROOT / "tools" / "llama.cpp" / "llama-server.exe", "llama-server", "Run scripts\\download-llama-cpp-windows.bat")
-            check_executable(ROOT / "models" / "translation" / "Hy-MT2-1.8B-Q4_K_M.gguf", "Translation model", "Run scripts\\models-download.bat")
+            check_executable(ROOT / "tools" / "llama.cpp" / "llama-server.exe", "llama-server", "crisp-caption.bat (menu 2) download llama.cpp")
+            check_executable(ROOT / "models" / "translation" / "Hy-MT2-1.8B-Q4_K_M.gguf", "Translation model", "crisp-caption.bat (menu 2) download models")
         else:
             ok(f"Remote translation URL configured: {translate_url}")
         check_translation_health(translate_url)
     else:
-        warn("Translation is disabled in profile", 'Set "translate_model": "Hy-MT2-1.8B" in profiles\\profile.ja.jsonc')
+        warn("Translation is disabled in profile", 'Set "translate_model": "Hy-MT2-1.8B" in profiles\\profile-stable-ja.jsonc')
 
 
 def check_port(port: int) -> None:

@@ -31,16 +31,18 @@ The demo page includes GitHub-hosted video previews and local MP4 fallbacks.
 
 ## Windows Quick Start
 
-Run these commands from the project folder:
+From the project folder, run the single console that replaces the old per-step scripts:
 
 ```bat
-scripts\setup-windows.bat
-scripts\download-crispasr-windows.bat
-scripts\download-llama-cpp-windows.bat
-scripts\models-download.bat
-scripts\check-deps.bat
-scripts\run-windows.bat
+crisp-caption.bat
 ```
+
+Choose from the menu:
+
+- `1` full setup (create `.venv` + install Python deps)
+- `2` download CrispASR / llama.cpp / models
+- `3` check dependencies
+- `4` start (Local / Colab / Diagnostics)
 
 Then open:
 
@@ -56,45 +58,16 @@ In the browser UI, choose:
 
 On Chromium-based browsers, enable tab audio in the browser capture picker.
 
-## What The Scripts Do
+## What The Console Does
 
-`scripts\setup-windows.bat`
+`crisp-caption.bat` is the single entry point. Its menu wraps the previous per-step scripts:
 
-- Checks Python and pip.
-- Creates `.venv`.
-- Installs Python dependencies.
-- Installs transparent overlay dependencies.
-- Creates `profiles\profile.ja.json` from `profiles\profile.ja.example.json` if missing.
-- Browser UI is `static\index.html` (no Node build).
+- `1` **Setup** — checks Python/pip, creates `.venv`, installs `requirements.txt` and `requirements-overlay.txt`. Browser UI is `static\index.html` (no Node build).
+- `2` **Download** — submenu: download CrispASR (CUDA if NVIDIA/CUDA, else Vulkan), llama.cpp, the models from `models\manifest.json`, or all three.
+- `3` **Check** — runs `scripts\check_deps.py` (Python packages, profile, CrispASR, llama.cpp, models, ports, translation reachability).
+- `4` **Start** — submenu: Local (start llama.cpp translation server + bridge), Colab (open the Web UI and use Connect), or Diagnostics (`-v`).
 
-`scripts\download-crispasr-windows.bat`
-
-- Downloads the latest CrispASR Windows runtime from GitHub (CUDA if the machine has NVIDIA/CUDA, else Vulkan).
-- Extracts it to `tools\crispasr\`.
-- Deletes the downloaded archive.
-- Checks that `tools\crispasr\crispasr.exe` starts.
-
-`scripts\download-llama-cpp-windows.bat`
-
-- Downloads the latest llama.cpp Windows runtime from GitHub (CUDA if available, else Vulkan; CUDA also pulls matching cudart).
-- Extracts it to `tools\llama.cpp\`.
-- Deletes the downloaded archive.
-- Checks that `tools\llama.cpp\llama-server.exe` exists.
-
-`scripts\models-download.bat`
-
-- Downloads the ASR model, VAD model, and Hy-MT2 translation model listed in `models\manifest.json`.
-- Stores model files under `models\`.
-
-`scripts\check-deps.bat`
-
-- Checks Python packages, control UI module, profile, CrispASR, llama.cpp, model files, ports, and translation server reachability.
-
-`scripts\run-windows.bat`
-
-- Starts the llama.cpp translation server in a separate window if the local model and binary exist and the server is not already running.
-- Opens `http://127.0.0.1:8765/` (profile selection starts the bridge on first connect).
-- Uses `scripts\_run_py.bat` to resolve the Python interpreter from `.venv`.
+The old per-step scripts were moved to `scripts\deprecate\` for reference; the console is the supported path.
 
 ## Hardware And Runtime
 
@@ -141,9 +114,9 @@ Manual equivalent:
 ```bat
 set CRISPASR_REMOTE_KEY=<ASR key printed by Colab>
 set OPENAI_API_KEY=<translation key printed by Colab>
-scripts\check-deps.bat
-scripts\run-windows.bat
+crisp-caption.bat
 ```
+then choose `4` → `2` Colab to start.
 
 `OPENAI_API_KEY` is used as the Bearer token for the remote llama.cpp proxy. Cloudflare Tunnel URLs are ephemeral, so re-enter them whenever the Colab runtime restarts.
 
@@ -166,17 +139,15 @@ Hy-MT2 uses the Tencent HY Community License Agreement, not a permissive open-so
 
 ## Profiles
 
-Public example profiles live in `profiles\`.
+Public profiles live in `profiles\`:
 
 ```text
-profiles\profile.ja.example.json
+profiles\profile-stable-ja.jsonc
+profiles\profile.ja.colab.jsonc
+profiles\profile-low-latency.jsonc
 ```
 
-`setup-windows.bat` copies it to:
-
-```text
-profiles\profile.ja.json
-```
+Pick one as your active profile in the Web UI. Any local-only profiles you keep are ignored by Git.
 
 Local profile JSON files are ignored by Git. Edit `profiles\profile.ja.json` for your machine.
 
@@ -252,18 +223,19 @@ Translation is final-only. Partial ASR text is shown as live preview but is not 
 Run:
 
 ```bat
-scripts\check-deps.bat
+crisp-caption.bat
 ```
+then choose `3` check dependencies.
 
 Common fixes:
 
-- Missing Python packages: run `scripts\setup-windows.bat`.
-- Missing CrispASR: run `scripts\download-crispasr-windows.bat`.
-- Missing llama.cpp: run `scripts\download-llama-cpp-windows.bat`.
-- Missing models: run `scripts\models-download.bat`.
+- Missing Python packages: run `crisp-caption.bat` → `1` setup.
+- Missing CrispASR: run `crisp-caption.bat` → `2` download CrispASR.
+- Missing llama.cpp: run `crisp-caption.bat` → `2` download llama.cpp.
+- Missing models: run `crisp-caption.bat` → `2` download models.
 - Translation server out of memory: use `set LOW_VRAM=1 && scripts\start-translation-server-windows.bat`.
 - Remote Colab 401/unauthorized: set `CRISPASR_REMOTE_KEY` for ASR and `OPENAI_API_KEY` for translation.
-- Remote Colab connection failure: refresh the Cloudflare Tunnel URLs in `profiles\profile.ja.json`.
+- Remote Colab connection failure: refresh the Cloudflare Tunnel URLs in the selected Colab profile (`profiles\profile.ja.colab.jsonc`).
 - Browser UI missing: ensure `static\index.html` exists.
 
 ## Development
@@ -275,18 +247,19 @@ Edit `static\index.html`, `static\app.css`, `static\app.js` and hard-refresh. No
 Use the virtual environment Python after setup:
 
 ```bat
-.venv\Scripts\python.exe bridge_server.py --config profiles\profile.ja.json --print-raw-crisp-events
-.venv\Scripts\python.exe bridge_server.py --config profiles\profile.ja.json --no-translate
-.venv\Scripts\python.exe bridge_server.py --config profiles\profile.ja.json --no-translate --debug-timestamps
-.venv\Scripts\python.exe bridge_server.py --config profiles\profile.ja.json -v
+.venv\Scripts\python.exe bridge_server.py --config profiles\profile-stable-ja.jsonc --print-raw-crisp-events
+.venv\Scripts\python.exe bridge_server.py --config profiles\profile-stable-ja.jsonc --no-translate
+.venv\Scripts\python.exe bridge_server.py --config profiles\profile-stable-ja.jsonc --no-translate --debug-timestamps
+.venv\Scripts\python.exe bridge_server.py --config profiles\profile-stable-ja.jsonc -v
 ```
 
 ## Documentation
 
 - `docs\PARAMETERS.md`: profile and CrispASR flag reference.
 - `docs\third-party.md`: third-party runtime and model license notes.
-- `profiles\profile.ja.example.json`: public Japanese live-subtitle example profile.
-- `profiles\profile.ja.colab.example.json`: public Japanese Colab remote example profile.
+- `profiles\profile-stable-ja.jsonc`: Japanese stable profile (local + Colab).
+- `profiles\profile.ja.colab.jsonc`: Japanese Colab remote profile.
+- `profiles\profile-low-latency.jsonc`: low-latency Japanese profile.
 
 ## License
 

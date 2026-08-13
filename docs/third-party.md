@@ -6,10 +6,10 @@ The setup and download scripts may download third-party runtime binaries and mod
 
 ## Runtime Binaries
 
-- CrispASR: downloaded by `scripts/download-crispasr-windows.bat`.
+- CrispASR: downloaded via the console (`crisp-caption.bat` → `2` download).
   - Project: https://github.com/CrispStrobe/CrispASR
   - License: MIT, according to the upstream `LICENSE`.
-- llama.cpp: downloaded by `scripts/download-llama-cpp-windows.bat`.
+- llama.cpp: downloaded via the console (`crisp-caption.bat` → `2` download).
   - Project: https://github.com/ggml-org/llama.cpp
   - License: MIT, according to the upstream `LICENSE`.
 - cloudflared: downloaded by the optional Colab helper script.
@@ -18,7 +18,7 @@ The setup and download scripts may download third-party runtime binaries and mod
 
 ## Model Files
 
-Model payloads are downloaded by `scripts/models-download.bat` from the URLs listed in `models/manifest.json`.
+Model payloads are downloaded via the console (`crisp-caption.bat` → `2` download models) from the URLs listed in `models/manifest.json`.
 
 - `TransWithAI/cohere-transcribe-ja-v0.1-GGUF`
   - URL: https://huggingface.co/TransWithAI/cohere-transcribe-ja-v0.1-GGUF

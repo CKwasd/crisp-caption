@@ -96,7 +96,7 @@ Do not pass `--punc-model` in realtime JSON+VAD profiles for now.
 
 Translation is final-only. Partial ASR remains visible as preview text, but partials are not sent to the translation server.
 
-For remote Colab translation, set `translate_url` to the Cloudflare Tunnel `/v1/chat/completions` URL and set `OPENAI_API_KEY` to the token printed by the Colab proxy. `scripts/run-windows.bat` skips local llama.cpp startup when `translate_url` is not localhost.
+For remote Colab translation, set `translate_url` to the Cloudflare Tunnel `/v1/chat/completions` URL and set `OPENAI_API_KEY` to the token printed by the Colab proxy. The console (`crisp-caption.bat` → `4` start) skips local llama.cpp startup when `translate_url` is not localhost.
 
 ## Overlay Settings
 
