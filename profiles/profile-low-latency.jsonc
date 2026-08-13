@@ -39,7 +39,7 @@
   // --- 翻譯 ---
   "translate_model": "Hy-MT2-1.8B",
   "translate_url": "http://127.0.0.1:8080/v1/chat/completions",
-  "translate_window": 4,
+  "translate_window": 10,
   "temperature": 0.7,
   "top_k": 20,
   "top_p": 0.6,

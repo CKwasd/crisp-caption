@@ -74,9 +74,10 @@
     const banner = $('error-banner');
     if (err && !state.lastErrorDismissed) {
       $('error-banner-text').textContent = err;
+      banner.classList.toggle('warn', err === 'Select a profile before starting capture.');
       banner.classList.add('show');
     }
-    else { banner.classList.remove('show'); $('error-banner-text').textContent = ''; }
+    else { banner.classList.remove('show'); banner.classList.remove('warn'); $('error-banner-text').textContent = ''; }
     $('btn-tab').disabled = !captureAllowed();
     $('btn-mic').disabled = !captureAllowed();
     $('btn-stop').disabled = state.audioState === 'none';
@@ -136,6 +137,7 @@
         `<option value="${esc(p.name)}" title="${esc(p.description || p.name)}"${p.name === cur ? ' selected' : ''}>${esc(p.label || p.name)}</option>`
       ).join('');
     if (cur) sel.value = cur;
+    else sel.selectedIndex = 0;
     // keep the Connect modal's profile dropdown in sync
     const conn = $('conn-profile');
     if (conn) {
@@ -329,7 +331,7 @@
       if (!res.ok) throw new Error(`GET /profiles failed ${res.status}`);
       const data = await res.json();
       state.profiles = data.profiles || [];
-      state.profile = data.active || localStorage.getItem(LAST_PROFILE_KEY) || '';
+      state.profile = '';
       state.crisp = data.crisp_status || 'stopped';
       renderProfiles();
       paint();

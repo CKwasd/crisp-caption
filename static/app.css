@@ -48,6 +48,9 @@ button.danger { border-color: var(--red); }
   font-size: 13px; line-height: 1.35; padding: 9px 10px;
 }
 .error-banner.show { display: flex; }
+.error-banner.warn {
+  background: #3a3320; border-color: var(--yellow); color: var(--yellow);
+}
 .error-banner-close {
   flex-shrink: 0; margin-left: auto; min-width: 26px; min-height: 26px; padding: 0;
   border: 1px solid var(--red); border-radius: 6px; background: transparent;
