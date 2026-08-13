@@ -1,10 +1,10 @@
 # crisp-caption
 
-Live Japanese captions and translation for browser audio, video playback, livestream watching, and OBS.
+**Real-time live Japanese captions and translation for browser video, livestreams, and OBS — running locally on your GPU.**
+
+crisp-caption captures tab or microphone audio in the browser, streams it to CrispASR (a Vulkan-accelerated streaming ASR), translates finalized utterances with a local llama.cpp server, and displays subtitles in the browser, a transparent desktop overlay, or an OBS Browser Source.
 
 The target setup is a Windows PC with a Vulkan-capable GPU and about 6 GB of VRAM. With the default Japanese ASR + Hy-MT2 translation profile, the intended live delay is roughly within 5 seconds on suitable hardware.
-
-`crisp-caption` captures tab or microphone audio in the browser, streams it to CrispASR, translates finalized utterances with a local llama.cpp server, and displays subtitles in the browser, a transparent desktop overlay, or an OBS Browser Source.
 
 ```text
 browser tab/mic audio
@@ -17,17 +17,36 @@ browser tab/mic audio
 
 This repository does not vendor runtime binaries or model files. The setup scripts download GPU-accelerated builds (CUDA if available, else Vulkan) into `tools/` and model files into `models/`.
 
+## Features
+
+- **Real-time Japanese ASR** — stream browser tab or microphone audio to CrispASR for live speech recognition with partial (preview) and final results.
+- **Japanese-to-English (and more) translation** — automatically translate finalized utterances with a local llama.cpp server (Hy-MT2 model).
+- **Transparent desktop overlay** — a click-through, always-on-top subtitle window you can move, resize, and restyle with `Ctrl`.
+- **OBS Browser Source overlay** — plug the subtitle stream straight into OBS as a transparent Browser Source for livestreaming.
+- **Low-latency local inference** — Vulkan-accelerated ASR and LLM translation for ~5-second live delay on a consumer GPU.
+- **Remote Colab / Kaggle compute** — offload ASR and translation to a free Colab or Kaggle notebook via Cloudflare Tunnel when you don't have a powerful GPU.
+- **Single console entry point** — `crisp-caption.bat` handles setup, downloads, dependency checks, and startup.
+
+## Use Cases
+
+- **Live Japanese subtitle overlays for OBS** — add real-time Japanese captions to your livestream or VOD with a transparent OBS Browser Source.
+- **Watching Japanese livestreams & videos** — capture tab audio and get live Japanese captions plus an English translation while you watch.
+- **Japanese learning & listening practice** — read along with live captions and translations for videos, podcasts, and live streams.
+- **Microphone capture** — run real-time Japanese ASR and translation on your own speech for practice or content.
+
 ## Demo
 
-Feature demos are stored in `demo/`:
+Feature demos are stored in `demo/`. Click a thumbnail to play the video:
 
-![Control panel](demo/ControlPanel.png)
+**Transparent desktop overlay**
 
-- [Transparent desktop overlay](demo/overlay.mp4)
-- [OBS subtitle overlay](demo/obs-subtitle.mp4)
-- [Full demo page](demo/)
+[![crisp-caption transparent desktop overlay demo](demo/ControlPanel.png)](demo/overlay.mp4)
 
-The demo page includes GitHub-hosted video previews and local MP4 fallbacks.
+**OBS subtitle overlay**
+
+[![crisp-caption OBS subtitle overlay demo](demo/ControlPanel.png)](demo/obs-subtitle.mp4)
+
+> Full demo page and notes: [demo/](demo/README.md)
 
 ## Windows Quick Start
 
@@ -264,3 +283,7 @@ Use the virtual environment Python after setup:
 ## License
 
 `crisp-caption` source code is licensed under the Apache License 2.0. Runtime binaries and model files downloaded by the helper scripts are third-party artifacts under their own licenses. See `docs\third-party.md`.
+
+---
+
+**Read this in another language:** [繁體中文](README.zh-TW.md) | English
