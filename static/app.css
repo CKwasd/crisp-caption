@@ -116,6 +116,7 @@ button.danger { border-color: var(--red); }
   position: fixed; inset: 0; background: rgba(0,0,0,.55);
   display: flex; align-items: center; justify-content: center; z-index: 100;
 }
+.modal-overlay[hidden] { display: none; }
 .modal {
   background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
   width: min(480px, 92vw); max-height: 90vh; overflow: auto; box-shadow: 0 8px 30px rgba(0,0,0,.4);

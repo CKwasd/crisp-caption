@@ -408,11 +408,11 @@
     }
   }
   function setFieldDisabled(sel, disabled) {
-    const label = document.querySelector(sel);
-    if (!label) return;
-    const input = label.querySelector('input');
-    label.classList.toggle('conn-disabled', disabled);
-    if (input) input.disabled = disabled;
+    document.querySelectorAll(sel).forEach((label) => {
+      const input = label.querySelector('input');
+      label.classList.toggle('conn-disabled', disabled);
+      if (input) input.disabled = disabled;
+    });
   }
   function syncConnFields() {
     const asrRemote = $('conn-asr-mode').value === 'remote';

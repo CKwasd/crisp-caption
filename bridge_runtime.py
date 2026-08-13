@@ -206,6 +206,29 @@ def config_from_profile(path: Path) -> BridgeRunConfig:
     return cfg
 
 
+def _remote_crisp_args(crisp_args: list[str]) -> list[str]:
+    """Rewrite model path flags for a remote (Colab-style) CrispASR.
+
+    The local config loader resolves ``-m`` / ``-vm`` values to absolute Windows
+    paths. On the remote side CrispASR runs with the repo root as cwd, so we
+    convert any path containing a ``models/`` (or ``models\\``) segment to the
+    portable ``models/...`` form.
+    """
+    path_flags = {"-m", "-vm", "--model", "--vad-model", "--punc-model"}
+    out = list(crisp_args)
+    for i, tok in enumerate(out[:-1]):
+        if tok in path_flags:
+            val = out[i + 1]
+            idx = val.find("models" + os.sep)
+            if idx < 0:
+                idx = val.find("models/")
+            if idx < 0:
+                idx = val.find("models\\")
+            if idx >= 0:
+                out[i + 1] = val[idx:].replace("\\", "/")
+    return out
+
+
 def apply_source_overrides(
     cfg: BridgeRunConfig,
     asr_source: dict[str, str] | None,
@@ -232,6 +255,11 @@ def apply_source_overrides(
             if key:
                 cfg.remote_asr_bearer = key
                 os.environ["CRISPASR_REMOTE_KEY"] = key
+            # In remote mode the crisp_args are sent to the Colab-side CrispASR,
+            # which runs with the repo root as cwd. Rewrite model paths that the
+            # local loader resolved to absolute Windows paths back to the
+            # portable "models/..." form.
+            cfg.crisp_args = _remote_crisp_args(cfg.crisp_args)
         else:
             cfg.asr_mode = "local"
     if translate_source:

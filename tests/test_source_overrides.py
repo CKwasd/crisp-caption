@@ -26,18 +26,40 @@ sys.modules["aiortc"] = _aiortc
 sys.modules.setdefault("PySide6", types.ModuleType("__pyside6__"))
 
 from bridge_config import BridgeRunConfig  # noqa: E402
-from bridge_runtime import apply_source_overrides  # noqa: E402
+from bridge_runtime import apply_source_overrides, _remote_crisp_args  # noqa: E402
 
 
 def _make_cfg() -> BridgeRunConfig:
     # Minimal config with a translate_url default so overrides have a base.
     return BridgeRunConfig(
         crisp_exe="crispasr",
-        crisp_args=[],
+        crisp_args=["-m", "models/asr/cohere-asr-ja-q6_k.gguf", "-vm", "models/vad/firered-vad.gguf"],
         asr_mode="local",
         translate_url="http://127.0.0.1:8080/v1/chat/completions",
         translate_enabled=False,
     )
+
+
+class RemoteCrispArgsTests(unittest.TestCase):
+    def test_absolute_windows_path_converted_to_models(self) -> None:
+        args = [
+            "-m",
+            "H:\\AI\\ASR\\crisp-caption\\models\\asr\\cohere-asr-ja-q6_k.gguf",
+            "-vm",
+            "H:\\AI\\ASR\\crisp-caption\\models\\vad\\firered-vad.gguf",
+        ]
+        out = _remote_crisp_args(args)
+        self.assertEqual(out, ["-m", "models/asr/cohere-asr-ja-q6_k.gguf", "-vm", "models/vad/firered-vad.gguf"])
+
+    def test_relative_forward_path_untouched(self) -> None:
+        args = ["-m", "models/asr/x.gguf"]
+        self.assertEqual(_remote_crisp_args(args), ["-m", "models/asr/x.gguf"])
+
+    def test_apply_source_override_remote_converts_paths(self) -> None:
+        cfg = _make_cfg()
+        cfg.crisp_args = ["-m", "H:\\repo\\models\\asr\\x.gguf", "-vm", "H:\\repo\\models\\vad\\v.gguf"]
+        apply_source_overrides(cfg, {"mode": "remote", "url": "wss://x/asr/stream", "key": "k"}, None)
+        self.assertEqual(cfg.crisp_args, ["-m", "models/asr/x.gguf", "-vm", "models/vad/v.gguf"])
 
 
 class ApplySourceOverridesTests(unittest.TestCase):
