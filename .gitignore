@@ -41,8 +41,9 @@ pnpm-debug.log*
 profile-*.jsonc
 profile.*.jsonc
 profiles/*.jsonc
-!profile.*.example.jsonc
-!profiles/*.example.jsonc
+# Keep these two profiles tracked / uploaded.
+!profiles/profile-stable-ja.jsonc
+!profiles/profile.ja.colab.jsonc
 !glossary.example.json
 !translate_prompt.example.txt
 
