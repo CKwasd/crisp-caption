@@ -115,7 +115,20 @@ echo Invalid choice. & echo. & goto run_menu
 
 :run_local
 echo == Local mode ==
-call scripts\start-translation-server-windows.bat
+if not exist ".venv\Scripts\python.exe" (
+  echo [FAIL] .venv not found. Run crisp-caption.bat menu 1 setup first.
+  pause
+  goto menu
+)
+if exist "tools\llama.cpp\llama-server.exe" (
+  if exist "models\translation\Hy-MT2-1.8B-Q4_K_M.gguf" (
+    scripts\_run_py.bat -c "import urllib.request as u; exit(0 if u.urlopen('http://127.0.0.1:8080/health',timeout=2).status<400 else 1)" >nul 2>nul
+    if errorlevel 1 (
+      echo Starting translation server in a new window...
+      start "crisp-caption translation" cmd /k scripts\start-translation-server-windows.bat
+    )
+  )
+)
 start "" http://127.0.0.1:8765/
 call scripts\_run_py.bat bridge_server.py
 pause
