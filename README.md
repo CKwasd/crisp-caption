@@ -2,6 +2,8 @@
 
 **Read this in another language:** [繁體中文](README.zh-TW.md) | English
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/CKwasd/crisp-caption/blob/main/scripts/colab/crisp_caption_colab_remote.ipynb)
+
 **Real-time live Japanese captions and translation for browser video, livestreams, and OBS — running locally on your GPU.**
 
 crisp-caption captures tab or microphone audio in the browser, streams it to CrispASR (a Vulkan-accelerated streaming ASR), translates finalized utterances with a local llama.cpp server, and displays subtitles in the browser, a transparent desktop overlay, or an OBS Browser Source.
