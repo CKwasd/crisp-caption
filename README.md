@@ -42,11 +42,11 @@ Feature demos are stored in `demo/`. Click a thumbnail to play the video:
 
 **Transparent desktop overlay**
 
-[![crisp-caption transparent desktop overlay demo](demo/ControlPanel.png)](demo/overlay.mp4)
+[![crisp-caption transparent desktop overlay demo](demo/overlay-thumb.png)](demo/overlay.mp4)
 
 **OBS subtitle overlay**
 
-[![crisp-caption OBS subtitle overlay demo](demo/ControlPanel.png)](demo/obs-subtitle.mp4)
+[![crisp-caption OBS subtitle overlay demo](demo/obs-subtitle-thumb.png)](demo/obs-subtitle.mp4)
 
 > Full demo page and notes: [demo/](demo/README.md)
 

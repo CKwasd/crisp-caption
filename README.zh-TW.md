@@ -42,11 +42,11 @@ browser tab/mic audio
 
 **透明桌面浮窗**
 
-[![crisp-caption 透明桌面浮窗示範](demo/ControlPanel.png)](demo/overlay.mp4)
+[![crisp-caption 透明桌面浮窗示範](demo/overlay-thumb.png)](demo/overlay.mp4)
 
 **OBS 字幕浮窗**
 
-[![crisp-caption OBS 字幕浮窗示範](demo/ControlPanel.png)](demo/obs-subtitle.mp4)
+[![crisp-caption OBS 字幕浮窗示範](demo/obs-subtitle-thumb.png)](demo/obs-subtitle.mp4)
 
 > 完整 demo 頁面與說明： [demo/](demo/README.md)
 
